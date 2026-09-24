@@ -163,6 +163,19 @@ def _release_fence(slot: Any, fence: str) -> None:
         fences.pop(fence, None)
 
 
+def slot_turn_in_progress(slot: Any) -> bool:
+    """Whether a dashboard turn is in progress on *slot* -- the ONE spelling of
+    ``running or _in_stage_execution`` for every producer that must not start a
+    concurrent turn: this module's refusal ladder and the Slack linked-thread
+    intercept's idle-or-queue decision. Between two stages of a live plan the
+    slot's task is briefly clear while ``_in_stage_execution`` still holds, so
+    ``running`` alone would start a second ``_run_chat`` over the plan's own and
+    overwrite its task. Reads both flags with a ``False`` default, as the ladder
+    always did: a slot that cannot say it is running reads as having no turn in
+    progress, which the ladder refuses (``REFUSED_IDLE``) and the intercept runs."""
+    return bool(getattr(slot, "running", False) or getattr(slot, "_in_stage_execution", False))
+
+
 def slot_unable_to_take(slot: Any) -> str:
     """The ``REFUSED_*`` reason *slot* cannot take a mid-turn message, or ``""``.
 
@@ -174,10 +187,10 @@ def slot_unable_to_take(slot: Any) -> str:
     produces -- the steer row and the queue entry are the same records the slot's
     own composer writes in that mode.
 
-    ``running or _in_stage_execution`` is the predicate every producer that must
-    not start a concurrent turn reads. The lease the channel observed as busy can
-    be held by something other than the dashboard turn loop -- the channel's own
-    turn on the resumed key is the live case -- and then the slot has no published
+    :func:`slot_turn_in_progress` is the predicate every producer that must not
+    start a concurrent turn reads. The lease the channel observed as busy can be
+    held by something other than the dashboard turn loop -- the channel's own turn
+    on the resumed key is the live case -- and then the slot has no published
     client to steer into and no drain coming: a queue entry would strand until an
     unrelated later dashboard turn, and the queue-or-run admission would START a
     turn against a lease another driver holds.
@@ -188,7 +201,7 @@ def slot_unable_to_take(slot: Any) -> str:
         return REFUSED_CLOSING
     if getattr(slot, "is_remote", False) or getattr(slot, "executor", "") == "remote":
         return REFUSED_REMOTE
-    if not (getattr(slot, "running", False) or getattr(slot, "_in_stage_execution", False)):
+    if not slot_turn_in_progress(slot):
         return REFUSED_IDLE
     return ""
 
@@ -264,6 +277,7 @@ async def hand_to_resumed_slot(
     channel_type: str = "",
     conversation_id: str = "",
     principal: str = "",
+    thread_id: str = "",
 ) -> ResumedBusyOutcome:
     """Route *text*, sent mid-turn into resumed *session_key*, to its slot.
 
@@ -274,7 +288,9 @@ async def hand_to_resumed_slot(
     queue and withhold only what is derived from the chat.
 
     *channel_type*, *conversation_id* and *principal* name the conversation the
-    text came from and the platform user the channel authorized on inbound. They
+    text came from and the platform user the channel authorized on inbound;
+    *thread_id* is the thread inside it, for a channel whose room is a thread
+    (a Telegram forum topic), empty otherwise. They
     are stamped on whatever the text becomes -- the queue entry directly, the steer
     through its admission dict, which the requeue copies onto the entry
     (``session_control.channel_recipient_meta``) -- so a drain-time drop of the
@@ -402,6 +418,7 @@ async def hand_to_resumed_slot(
             channel_type=channel_type,
             conversation_id=conversation_id,
             principal=principal,
+            thread_id=thread_id,
         ),
         name=f"channel-handoff:{session_key}",
     )
@@ -420,6 +437,7 @@ async def _run_handoff(
     channel_type: str,
     conversation_id: str,
     principal: str,
+    thread_id: str = "",
 ) -> ResumedBusyOutcome:
     """The hand-off proper; :func:`hand_to_resumed_slot` runs it as a shielded task."""
     slot = live_dashboard_slot(state, session_key)
@@ -434,7 +452,7 @@ async def _run_handoff(
     # circular import: session_control imports this package's modules at module level.
     from kiro_crew.dashboard.session_control import channel_recipient_meta, containment_meta
 
-    recipient = channel_recipient_meta(channel_type, conversation_id, principal)
+    recipient = channel_recipient_meta(channel_type, conversation_id, principal, thread_id)
     # The identity this hand-off's text carries through every record the steer
     # leaves (see ``standing_after_move``). Minted here, not inside the steer, so
     # it is known on this side of the RPC.
