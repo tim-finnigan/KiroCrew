@@ -537,7 +537,16 @@ def due_for_nightly(account: str, now: Optional[dt.datetime] = None) -> bool:
     The backoff is read LAST, after the grant and after the window, because it is
     the narrowest of the three: the first two answer whether a run is wanted at all,
     and this only answers whether to attempt one again yet.
+
+    Capability is read FIRST, the way :func:`due_for_sessions_nightly` reads its own
+    kind's: a host where the snapshot payload cannot be held from creation refuses
+    inside :func:`run_snapshot_backup`, so calling it anyway would raise on every
+    wake, record a failed run and audit a ``denied`` SEL event every half hour for a
+    kind that can never succeed there. Answering "not due" makes the capability
+    question a scheduling fact rather than a recurring error.
     """
+    if kind_unavailable_reason(KIND_SNAPSHOT) is not None:
+        return False
     if not nightly_enabled(account):
         return False
     if not _a_day_since_last_run(account, KIND_SNAPSHOT, now):

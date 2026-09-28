@@ -54,6 +54,13 @@ def _isolated_backup_state(tmp_path, monkeypatch):
     the key's SHAPE rather than of this fixture.
     """
     monkeypatch.setattr(backup, "_state_path", lambda: tmp_path / "backup.json")
+    # kind_unavailable_reason(SESSIONS) now gates on the archive body being holdable
+    # from creation (a confined-Linux + O_TMPFILE capability) as well as on pinned
+    # traversal. Every test host here is unconfined, so default that capability
+    # present -- these tests exercise pinning, grants and the redaction gap, not the
+    # held-body gate, and the tests that DO exercise it patch it themselves.
+    monkeypatch.setattr(backup.storage, "can_hold_upload_body_from_creation", lambda: True)
+    monkeypatch.setattr(backup.storage, "body_bytes_can_be_held_from_creation", lambda: True)
     backup._unpersisted_runs.clear()
     yield
     backup._unpersisted_runs.clear()
@@ -113,7 +120,10 @@ class TestTheTranscriptWindowIsItsOwn:
         to False and therefore overrides this fixture.
         """
         with mock.patch.object(backup, "_CAN_PIN_TRAVERSAL", True):
-            yield
+            with mock.patch.object(
+                backup.storage, "can_hold_upload_body_from_creation", return_value=True
+            ):
+                yield
 
     def test_authorized_and_never_run_is_due(self):
         backup.set_nightly_sessions(ACCOUNT, True)
@@ -144,6 +154,20 @@ class TestTheTranscriptWindowIsItsOwn:
         with mock.patch.object(backup, "_CAN_PIN_TRAVERSAL", False):
             assert backup.kind_unavailable_reason(backup.KIND_SESSIONS) is not None
             assert backup.due_for_sessions_nightly(ACCOUNT) is False
+
+    def test_a_platform_that_cannot_hold_the_snapshot_payload_is_never_due(self):
+        # The snapshot sibling of the above: `run_snapshot_backup` refuses up front
+        # where the payload cannot be held from creation, so `due_for_nightly` must
+        # read that capability first. Left due, every wake records a failed run and
+        # audits a SEL `denied` for a kind that can never succeed there. The real
+        # payload-held gate is patched off, not the reason helper, so this pins the
+        # composition rather than a stub that agrees with itself.
+        backup.set_nightly(ACCOUNT, True)
+        with mock.patch.object(
+            backup.storage, "body_bytes_can_be_held_from_creation", lambda: False
+        ):
+            assert backup.kind_unavailable_reason(backup.KIND_SNAPSHOT) is not None
+            assert backup.due_for_nightly(ACCOUNT) is False
 
 
 def _run(coro):
@@ -537,6 +561,13 @@ class TestTheGrantIsRereadBeforeTheBytesLeave:
         assert set(backup._NIGHTLY_CONSENT_READERS) == set(backup.JOB_KINDS)
         assert len(set(backup._NIGHTLY_CONSENT_READERS.values())) == len(backup.JOB_KINDS)
 
+    @pytest.mark.skipif(
+        not backup.storage._UNNAMED_BODY_SUPPORTED,
+        reason=(
+            "no sealable memfd here (Windows/macOS/BSD): the real archive create "
+            "fails closed before the grant gate, which its own fail-closed tests pin"
+        ),
+    )
     def test_the_real_transcript_push_stops_at_the_gate(self, tmp_path, monkeypatch):
         # The gate is only worth anything if the real path reaches it. This drives
         # `run_sessions_backup` with the REAL gate and the grant withdrawn: the
@@ -546,6 +577,13 @@ class TestTheGrantIsRereadBeforeTheBytesLeave:
         (crew / "t.jsonl").write_bytes(b"transcript\n")
         monkeypatch.setattr(backup, "data_home", lambda: tmp_path / "crew_home")
         monkeypatch.setattr(backup, "kiro_sessions_dir", lambda: tmp_path / "absent_cli")
+        # The archive body is an anonymous memfd (RAM-backed), so the staging
+        # directory's filesystem need not honour O_TMPFILE -- stage under tmp_path
+        # and the run reaches the grant gate under test. Where no sealable memfd
+        # exists the create fails closed first, pinned by its own tests.
+        staging = tmp_path / "kc-aws-staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(backup.storage, "staging_root", lambda: staging)
         _authorized_env(monkeypatch)
         _walk_by_name(monkeypatch)
 
@@ -764,16 +802,24 @@ class TestAGrantedButIdleNightlyIsReported:
         # Without this the helper could be a constant refusal and every test above
         # would still pass, which would withhold the nightly everywhere.
         with mock.patch.object(backup, "_CAN_PIN_TRAVERSAL", True):
-            with mock.patch.object(backup, "_unattended_sessions_redaction_gap", return_value=None):
-                assert backup.scheduled_sessions_blocked_reason() is None
+            with mock.patch.object(
+                backup.storage, "can_hold_upload_body_from_creation", return_value=True
+            ):
+                with mock.patch.object(
+                    backup, "_unattended_sessions_redaction_gap", return_value=None
+                ):
+                    assert backup.scheduled_sessions_blocked_reason() is None
 
     def test_the_redaction_gap_is_reported_when_the_host_is_capable(self, monkeypatch):
         # Both causes reach the same reader, so a surface needs only one field.
         with mock.patch.object(backup, "_CAN_PIN_TRAVERSAL", True):
             with mock.patch.object(
-                backup, "_unattended_sessions_redaction_gap", return_value="redaction is on"
+                backup.storage, "can_hold_upload_body_from_creation", return_value=True
             ):
-                assert backup.scheduled_sessions_blocked_reason() == "redaction is on"
+                with mock.patch.object(
+                    backup, "_unattended_sessions_redaction_gap", return_value="redaction is on"
+                ):
+                    assert backup.scheduled_sessions_blocked_reason() == "redaction is on"
 
     def test_the_capability_reason_wins_over_the_redaction_gap(self):
         # Ordered deliberately: the capability is a property of the machine that no
