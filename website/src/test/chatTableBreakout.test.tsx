@@ -22,7 +22,7 @@ describe('transcript table breakout contract', () => {
     const table = container.querySelector(TABLE_SELECTOR)
     expect(table).not.toBeNull()
     expect(table?.closest('.chat-message-body')).not.toBeNull()
-    expect(css).toContain(`${TABLE_SELECTOR} {`)
+    expect(css).toContain(`${TABLE_SELECTOR}[data-expanded] {`)
     expect(css).toContain(`.chat-message-body:has(${TABLE_SELECTOR}),`)
   })
 
@@ -53,7 +53,7 @@ describe('transcript table breakout contract', () => {
     // every pixel the rail does not need). In px, like the constant: a rem
     // clearance shrinks under a browser's smaller root font while the rail's
     // band does not.
-    const clearance = css.match(/\.markdown-table \{[^}]*width: max\(100%, calc\(var\(--chat-pane-width, 100%\) - (\d+)px\)\)/)
+    const clearance = css.match(/\.markdown-table\[data-expanded\] \{[^}]*width: max\(100%, calc\(var\(--chat-pane-width, 100%\) - (\d+)px\)\)/)
     expect(clearance).not.toBeNull()
     expect(Number(clearance![1]) / 2).toBe(40)
   })
@@ -73,6 +73,38 @@ describe('transcript table breakout contract', () => {
     expect(container.querySelector(`.chat-message-body:has(${TABLE_SELECTOR})`)).not.toBeNull()
     const main = readFileSync(resolve(here, '../pages/ChatPage.tsx'), 'utf8')
     expect(main).toContain('chat-message-body flex flex-col gap-0.5 min-w-0 overflow-hidden max-w-full')
+  })
+
+  it('keeps a table at the reading column\'s width until its Expand toggle is pressed, and back', () => {
+    // The breakout width rule is gated on `data-expanded`: no ungated rule
+    // may widen a top-level table by default.
+    expect(css).not.toContain(`${TABLE_SELECTOR} {`)
+    const { container } = render(<ChatMessageList messages={[{ role: 'assistant', content: TABLE }]} running={false} />)
+    const table = container.querySelector(TABLE_SELECTOR)!
+    const toggle = table.querySelector<HTMLButtonElement>('[data-testid="table-expand"]')!
+    expect(table).not.toHaveAttribute('data-expanded')
+    expect(container.querySelector(`${TABLE_SELECTOR}[data-expanded]`)).toBeNull()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAccessibleName('Expand table')
+    expect(toggle).toHaveTextContent('Expand')
+
+    act(() => toggle.click())
+    expect(container.querySelector(`${TABLE_SELECTOR}[data-expanded]`)).toBe(table)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // The name stays put; aria-expanded carries the state.
+    expect(toggle).toHaveAccessibleName('Expand table')
+    expect(toggle).toHaveTextContent('Collapse')
+
+    act(() => toggle.click())
+    expect(table).not.toHaveAttribute('data-expanded')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('shows the Expand toggle only on a top-level table in an unbordered bubble', () => {
+    // Hidden everywhere by default; revealed by the same top-level selector
+    // the width rule uses, and only on a viewport where expanding can widen.
+    expect(css).toMatch(/\.markdown-table-expand \{\s*display: none;\s*\}/)
+    expect(css).toContain(`@media (min-width: 880px) {\n  .chat-container ${TABLE_SELECTOR} .markdown-table-expand {\n    display: flex;`)
   })
 
   it('does not widen nested quotation/list tables or user messages', () => {
@@ -110,7 +142,7 @@ describe('transcript table breakout contract', () => {
     // reaches the tables as an inherited property, not via a query container.
     expect(css).not.toMatch(/\.chat-container\s*\{[^}]*container(?:-type|-name)?\s*:/)
     expect(css).not.toContain('@container chat-transcript')
-    expect(css).toContain(`.chat-container ${TABLE_SELECTOR} {`)
+    expect(css).toContain(`.chat-container ${TABLE_SELECTOR}[data-expanded] {`)
     expect(css).toContain(`width: max(100%, calc(var(${PANE_WIDTH_PROPERTY}, 100%) - 80px))`)
     expect(css).toContain(`margin-inline: min(0px, calc((100% - (var(${PANE_WIDTH_PROPERTY}, 100%) - 80px)) / 2))`)
   })
