@@ -18,6 +18,9 @@ why the UI and every tool answer must not describe them as a capacity queue.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 QUEUED_REASON_CONCURRENCY_LIMIT = "concurrency_limit"
 QUEUED_REASON_LOW_MEMORY = "low_memory"
 QUEUED_REASON_POSTURE_CRITICAL = "posture_critical"
@@ -40,3 +43,43 @@ __all__ = [
     "QUEUED_REASON_LOW_MEMORY",
     "QUEUED_REASON_POSTURE_CRITICAL",
 ]
+
+
+#: What a queued record's wait kind means, for one the gateway sent without the
+#: gate's own sentence: a capacity wait, or a deferral already past its admit
+#: wait and not yet re-checked.
+QUEUED_KIND_TEXT: dict[str, str] = {
+    QUEUED_REASON_LOW_MEMORY: "not enough free memory to start it",
+    QUEUED_REASON_POSTURE_CRITICAL: "host memory is critically low",
+    QUEUED_REASON_ADAPTIVE_CAP_ZERO: (
+        "starts are paused while the host is low on memory or overloaded"
+    ),
+    QUEUED_REASON_CONCURRENCY_LIMIT: "waiting for a free slot behind the concurrency limit",
+}
+
+#: ``resuming_reason`` of a queued record that already ran: a ``recovering``
+#: row after a gateway restart, or a ``retry_wait`` row that ran before.
+RESUMING_AFTER_RESTART = "gateway_restart"
+RESUMING_RETRY = "retry"
+
+#: A queued record that already ran (``resuming``), by ``resuming_reason``.
+RESUMING_TEXT: dict[str, str] = {
+    RESUMING_AFTER_RESTART: "waiting to resume after a gateway restart",
+    RESUMING_RETRY: "waiting to retry",
+}
+
+
+def queued_wait_text(record: Mapping[str, Any]) -> str:
+    """Why an accepted spawn with no run waits, in words (NOT redacted).
+
+    One wording for every reader of a queued record (``spawn_status``,
+    ``spawn_list``, ``spawn_sub_agents``, ``kirocrew spawn list``): a run that
+    already started says what it waits to resume; otherwise the gate's own
+    sentence, else the wait kind.
+    """
+    if record.get("resuming") is True:
+        return RESUMING_TEXT.get(str(record.get("resuming_reason") or ""), "waiting to resume")
+    detail = str(record.get("reason_detail") or "").strip()
+    if detail:
+        return detail
+    return QUEUED_KIND_TEXT.get(str(record.get("reason") or ""), "waiting to start")

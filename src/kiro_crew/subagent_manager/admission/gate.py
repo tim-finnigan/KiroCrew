@@ -1115,8 +1115,9 @@ class _GateMixin(ManagerComponent):
                 agent_id,
                 "retained admitted generation" if retained else "left queued for the pump",
             )
-            # The row is still QUEUED (or ADMITTED and retained), so the depth
-            # published here must count it. A pump that popped it marked it
+            # The row is still QUEUED (or ADMITTED and retained), and the depth
+            # published here counts both: ``taskq_overflow`` includes admitted
+            # rows no run is registered for. A pump that popped it marked it
             # dispatching; that mark describes an attempt that just ended.
             self._manager._dispatching_ids.discard(agent_id)
             self._manager._emit_queue_depth(parent_session_key, batch_id)
