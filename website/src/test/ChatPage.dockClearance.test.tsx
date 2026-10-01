@@ -41,7 +41,11 @@ const num = (re: RegExp, src: string): number => {
 
 describe('composer dock clearance', () => {
   it('pads the scroller by the measured dock height plus the px clearance', () => {
-    expect(CHAT_PAGE).toMatch(/scrollerStyle=\{\{ paddingBottom: dockH \+ DOCK_CLEARANCE_PX,/)
+    // The style object now leads with the pinned-prompt top reserve (#15993's
+    // mirror of this bottom rule), so `paddingBottom` is no longer the first
+    // key — match it wherever it sits in the object. The dock-clearance padding
+    // itself is unchanged: the strip the floating dock covers plus the px margin.
+    expect(CHAT_PAGE).toMatch(/scrollerStyle=\{\{[^}]*paddingBottom: dockH \+ DOCK_CLEARANCE_PX,/)
     expect(num(/const DOCK_CLEARANCE_PX = (\d+)/, CHAT_PAGE)).toBeGreaterThan(0)
     expect(num(/const TRANSCRIPT_TAIL_SPACER_PX = (\d+)/, CHAT_PAGE)).toBeGreaterThan(0)
   })

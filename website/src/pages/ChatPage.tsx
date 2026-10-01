@@ -5720,12 +5720,19 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
               // the tail spacer this one also applies to a transcript short
               // enough not to scroll, so both are needed for the last line to
               // clear the dock in every state.
+              // `paddingTop` is the TOP mirror: the pinned-prompt card floats
+              // over the scroller's top edge exactly as the dock floats over its
+              // bottom, so the scroller reserves the card's measured footprint
+              // (`pinnedReserve`, 0 when nothing is pinned) and the first row —
+              // the "N agents queued" card included — starts below it instead of
+              // sliced under it. Zero reserve leaves the h-16 header spacer the
+              // sole top band, byte-for-byte the prior layout.
               // `visibility` is not one of the properties the shell claims, so
               // adding it here is inside its documented contract. Hiding rather
               // than unmounting keeps the scroller's geometry and the height
               // cache intact -- the restore needs to WRITE scrollTop while this
               // is up, which a display:none element cannot do.
-              scrollerStyle={{ paddingBottom: dockH + DOCK_CLEARANCE_PX, ...(virt.restoreGate ? { visibility: 'hidden' as const } : null) }}
+              scrollerStyle={{ paddingTop: pinned?.pinnedReserve ?? 0, paddingBottom: dockH + DOCK_CLEARANCE_PX, ...(virt.restoreGate ? { visibility: 'hidden' as const } : null) }}
               aboveRows={<>
               {/* Mid-switch `slotHasMore` still describes the outgoing chat, so the cursor
                   key gates the bar to match the paging thunk's own precondition. */}
