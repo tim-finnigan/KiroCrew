@@ -36,7 +36,7 @@ import { useKiroUsageReadout, kiroUsageSegment } from './shell/topbar/kiroUsageR
 import { safeSetItem } from './utils/safeStorage'
 import { gcOrphanedStorage } from './utils/storageGc'
 import { useMetricsReadout, metricsSegment, MetricsCard } from './shell/topbar/metricsReadout'
-import { Rocket, Bell, Code, RefreshCw, Package, Download, Hammer, XCircle, Check, AlertTriangle, X, Coins, Compass, LayoutGrid, Fullscreen, Menu, PanelLeft, ArrowLeftToLine, SquareTerminal, Bot, Smartphone, Search as SearchIcon } from 'lucide-react'
+import { Rocket, Bell, Code, RefreshCw, Package, Download, Hammer, XCircle, Check, AlertTriangle, X, Coins, Compass, LayoutGrid, Fullscreen, Menu, SquareTerminal, Bot, Smartphone, Search as SearchIcon } from 'lucide-react'
 import { useFirstRunChapters, FirstRunChapters } from './shell/boot/firstRun'
 import ErrorNotice from './components/ErrorNotice'
 import { PREVIEW_EXPAND_EVENT } from './components/WebPreviewPanel'
@@ -1355,12 +1355,9 @@ export default function App() {
 
   const toggleNav = () => {
     if (isMobile) { if (mobileNavPhaseRef.current === 'open') closeMobileNavDrawer(); else openMobileNav() }
-    else {
-      // The user has taken ownership of the rail: leaving preview expand mode
-      // must not overwrite this with the pre-expand state.
-      navAutoCollapsed.current = null
-      setNavCollapsed(prev => { const next = !prev; safeSetItem('mc-nav', next ? '1' : '0'); return next })
-    }
+    // Desktop: no-op. The rail is fixed-collapsed on desktop (the expandable
+    // rail is a mobile-only affordance), so the sidebar keyboard shortcut and
+    // any other toggleNav caller cannot widen it.
   }
   // Close mobile nav on route change
   useEffect(() => { if (isMobile) closeMobileNavDrawer() }, [location.pathname]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1378,7 +1375,11 @@ export default function App() {
   useEffect(() => { if (!isMobile) { setMobileNavPhase('closed'); takeOverDrawer(mobileNavX) } }, [isMobile, mobileNavX])
   // Focus mode honours the collapse preference too: the overlay rail is as wide
   // as the docked rail would be, and the collapse control toggles it the same way.
-  const effectiveCollapsed = navCollapsed && !isMobile
+  // The expandable rail is a MOBILE affordance only. On desktop the rail is
+  // always the collapsed icon rail (hover hints as its labels); it never widens,
+  // so a nav selection cannot also widen it. Mobile keeps its drawer rail, which
+  // navCollapsed/the drawer phase drive separately.
+  const effectiveCollapsed = !isMobile ? true : navCollapsed && !isMobile
   // Publish the rail track so consumers outside the shell can size against the
   // space actually left for content — ChatPage's activity panel decides
   // beside-vs-fill from it. Kept in sync with the gridTemplateColumns value
@@ -2304,28 +2305,12 @@ export default function App() {
             The sidebar toggle lives HERE (menu row), not in the topbar. */}
         <div className="shrink-0 flex flex-col gap-0.5 px-2 pt-2">
           {/* The crew identity switcher IS the rail header — one identity that
-              names the crew on screen and switches crews, replacing the former
-              brand toggle (no stacked brand glyph + identity mark). A compact
-              collapse control shares the row; the source branch collapsed from
-              an edge grabber, which was dropped, so the rail keeps an explicit
-              toggle (also bound to the sidebar keyboard shortcut). */}
-          <div className={`flex mb-1.5 ${effectiveCollapsed ? 'flex-col items-center gap-1' : 'items-center gap-1'}`}>
-            <div className="min-w-0 flex-1">
-              <InstanceTabBar variant="navigation" collapsed={effectiveCollapsed} />
-            </div>
-            <button
-              type="button"
-              onClick={toggleNav}
-              title={effectiveCollapsed ? i18nT('app.expand_sidebar') : i18nT('app.collapse_sidebar')}
-              aria-label={effectiveCollapsed ? i18nT('app.expand_sidebar') : i18nT('app.collapse_sidebar')}
-              aria-expanded={!effectiveCollapsed}
-              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-md bg-transparent border-none cursor-pointer text-muted hover:text-text hover:bg-bg-hover focus-ring"
-            >
-              {effectiveCollapsed ? <PanelLeft size={16} /> : <ArrowLeftToLine size={15} />}
-            </button>
+              names the crew and switches crews. The wide rail is permanently the
+              collapsed icon rail (hover hints are the only label), so there is no
+              expand/collapse toggle; the first nav item below is Sessions. */}
+          <div className="flex flex-col items-center mb-1.5">
+            <InstanceTabBar variant="navigation" collapsed={effectiveCollapsed} />
           </div>
-          {/* Hairline under the expanded header (collapsed rail has none). */}
-          {!effectiveCollapsed && <div aria-hidden="true" className="h-px bg-border shrink-0 mb-[7px]" />}
           {advertisedNavItems.filter(n => n.group === 'Main').map(n => <div key={n.id}>{renderNavRow(n)}</div>)}
           {/* Apps section: the old single "Explore" header link split into two
               nav rows — Discover (the storefront, /apps) and Library
