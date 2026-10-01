@@ -3,6 +3,7 @@ const assert = require("node:assert");
 const {
   createRendererRecovery,
   isRecoverableReason,
+  withSafeReload,
   DEFAULT_MAX_ATTEMPTS,
 } = require("../renderer-recovery");
 
@@ -148,4 +149,18 @@ test("a throwing snapshot probe never blocks recovery", () => {
   assert.strictEqual(h.rec.handleGone({ reason: "crashed" }), "reloaded");
   assert.strictEqual(h.reloads.length, 1, "recovery must still happen");
   assert.match(h.logs.join("\n"), /snapshot failed/);
+});
+
+test("recovery reload asks the dashboard not to reopen the remembered chat", () => {
+  const u = new URL(withSafeReload("http://localhost:5476?token=abc"));
+  assert.strictEqual(u.origin, "http://localhost:5476");
+  assert.strictEqual(u.pathname, "/");
+  assert.strictEqual(u.searchParams.get("safe"), "1");
+  assert.strictEqual(u.searchParams.get("token"), "abc");
+});
+
+test("recovery reload without a credential still carries safe=1", () => {
+  const u = new URL(withSafeReload("http://localhost:5476"));
+  assert.strictEqual(u.searchParams.get("safe"), "1");
+  assert.strictEqual(u.searchParams.has("token"), false);
 });

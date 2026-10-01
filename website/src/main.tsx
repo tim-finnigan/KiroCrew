@@ -32,6 +32,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import DashboardBootstrap from './components/DashboardBootstrap'
 import { installPageZoomSuppression } from './utils/pageZoom'
 import { installStaleShellHeal } from './lib/staleShellHeal'
+import { captureSafeReload } from './lib/safeReload'
 import {
   hasUnreconciledKeys,
   hydrateUiPrefs,
@@ -78,6 +79,9 @@ const catalogReady = ensureCatalog(i18next.language).then(async (loaded) => {
 installPageZoomSuppression()
 // Detect and break out of a stale service-worker shell (see the module doc).
 installStaleShellHeal()
+// A crash-recovery reload must not reopen the chat that crashed it. Read (and
+// strip) `?safe=1` before the router sees the URL. See lib/safeReload.ts.
+captureSafeReload()
 
 // Auto-recover from stale lazy-chunk errors after a frontend rebuild.
 // Vite fires `vite:preloadError` on window when a dynamic import() of a

@@ -19,6 +19,7 @@ import type { ChatSlot, SessionInfo } from '../../types'
 import { isChatPageSurface } from '../../utils/channelOrigin'
 import { writePrefill } from '../../utils/navIntent'
 import type { PasteBlock } from '../../utils/pasteTokens'
+import { isSafeReload } from '../../lib/safeReload'
 import { safeSetItem } from '../../utils/safeStorage'
 import { shouldReplaceSessionUrl, popMaySwitchSession } from '../../utils/sessionUrlHistory'
 import { toSlug } from '../../utils/shareUrl'
@@ -777,6 +778,10 @@ export function useChatPageSessionController({
     if (tokenConsumingRef.current) return
     if (newSessionRef.current || newSlotFailed) return
     if (searchParams.get('slot') || searchParams.get('sid') || initialSidRef.current) return
+    // A crash-recovery reload opens nothing. The remembered chat -- or the first
+    // one, which is often the same busy chat -- may be what froze the renderer,
+    // and reopening it would freeze and kill it again (#12907). The user picks.
+    if (filteredSlots.length > 0 && isSafeReload()) return
     if (filteredSlots.length > 0) {
       const saved = localStorage.getItem(slotStorageKey)
       const target = saved && filteredSlots.find(s => s.key === saved) ? saved : filteredSlots[0].key

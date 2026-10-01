@@ -141,8 +141,23 @@ function createRendererRecovery({
   };
 }
 
+/**
+ * Mark a dashboard URL as a recovery reload by adding `safe=1`.
+ *
+ * `safe=1` tells the dashboard not to reopen the chat it remembered. That chat
+ * is often what froze or crashed the renderer, and reopening it repeats the
+ * crash on every reload (#12907). See website/src/lib/safeReload.ts. Every
+ * other part of the URL, origin and credential included, is kept as given.
+ */
+function withSafeReload(dashboardUrl) {
+  const url = new URL(dashboardUrl);
+  url.searchParams.set("safe", "1");
+  return url.toString();
+}
+
 module.exports = {
   createRendererRecovery,
+  withSafeReload,
   isRecoverableReason,
   RECOVERABLE_REASONS,
   DEFAULT_MAX_ATTEMPTS,
