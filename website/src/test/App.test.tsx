@@ -965,15 +965,18 @@ describe('App routing', () => {
   })
 
   it('renders Kiro Crew branding', () => {
-    localStorage.removeItem('mc-nav') // expanded sidebar shows the brand text
+    localStorage.removeItem('mc-nav')
     renderWithProviders(<App />, { route: '/chat' })
-    // Brand (logo + name) moved from the top bar into the sidebar menu row.
-    // The wordmark renders as two colored segments ('Kiro ' + 'Crew').
-    expect(screen.getAllByText('Crew').length).toBeGreaterThan(0)
+    // The chrome rail header is the crew identity switcher, not the brand
+    // wordmark: the brand toggle was replaced by the switcher, and the product
+    // name now lives in the document title (asserted elsewhere) rather than the
+    // rail. The switcher trigger is present and names the switch action.
+    const nav = screen.getByRole('navigation', { name: 'Main navigation' })
+    expect(within(nav).getByTestId('navigation-crew-switcher')).toBeInTheDocument()
     localStorage.removeItem('mc-nav')
   })
 
-  it('uses installed theme branding in the left rail and browser favicon', async () => {
+  it('uses installed theme branding for the browser favicon', async () => {
     const { api } = await import('../api/client')
     localStorage.removeItem('mc-nav')
     localStorage.setItem('mc-color-theme', 'custom-pearce')
@@ -999,15 +1002,14 @@ describe('App routing', () => {
 
     const view = renderWithProviders(<App />, { route: '/chat' })
     try {
-      const nav = screen.getByRole('navigation', { name: 'Main navigation' })
-      const brand = within(nav).getByRole('button', { name: 'Collapse sidebar' })
-      await waitFor(() => expect(brand).toHaveTextContent('KIRO CREW'))
-      expect(brand.querySelector('img')).toHaveAttribute(
-        'src',
-        '/api/theme/pearce/assets/branding/logo.svg',
-      )
-      const favicon = document.getElementById('mc-theme-favicon') as HTMLLinkElement | null
-      expect(favicon).not.toBeNull()
+      // The chrome rail header is the crew switcher, not the brand logo, so the
+      // installed theme's branding no longer paints a rail glyph. The favicon
+      // wiring is independent of the rail and still applies.
+      const favicon = await waitFor(() => {
+        const el = document.getElementById('mc-theme-favicon') as HTMLLinkElement | null
+        expect(el).not.toBeNull()
+        return el!
+      })
       expect(favicon).toHaveAttribute(
         'href',
         '/api/theme/pearce/assets/branding/favicon.svg',
@@ -1381,16 +1383,16 @@ describe('App routing', () => {
     renderWithProviders(<App />, { route: '/chat' })
 
     const nav = screen.getByRole('navigation', { name: 'Main navigation' })
-    // Brand (logo + name) now lives in the rail's menu row, replacing the old
-    // hamburger; the collapse control is an arrow-left-to-line button.
-    expect(within(nav).getByText('Crew')).toBeInTheDocument()
+    // The rail header is the crew switcher plus a dedicated collapse control
+    // (replacing the brand toggle). The collapse button toggles mc-nav and flips
+    // to an expand affordance when collapsed; the Main group heading is hidden.
+    expect(within(nav).getByTestId('navigation-crew-switcher')).toBeInTheDocument()
     const collapse = within(nav).getByRole('button', { name: 'Collapse sidebar' })
     expect(within(nav).queryByRole('button', { name: 'Toggle sidebar' })).not.toBeInTheDocument()
     expect(within(nav).queryByText('Main')).not.toBeInTheDocument()
 
     fireEvent.click(collapse)
-    // Collapsed: the brand shrinks to a clickable logo that expands the rail;
-    // the collapse control unmounts.
+    // Collapsed: the collapse control flips to an expand affordance.
     expect(within(nav).getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
     expect(within(nav).queryByRole('button', { name: 'Collapse sidebar' })).not.toBeInTheDocument()
     expect(localStorage.getItem('mc-nav')).toBe('1')

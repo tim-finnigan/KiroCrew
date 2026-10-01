@@ -36,7 +36,7 @@ import { useKiroUsageReadout, kiroUsageSegment } from './shell/topbar/kiroUsageR
 import { safeSetItem } from './utils/safeStorage'
 import { gcOrphanedStorage } from './utils/storageGc'
 import { useMetricsReadout, metricsSegment, MetricsCard } from './shell/topbar/metricsReadout'
-import { Rocket, Bell, Code, RefreshCw, Package, Download, Hammer, XCircle, Check, AlertTriangle, X, Coins, Compass, LayoutGrid, Fullscreen, Menu, SquareTerminal, Bot, Smartphone, Search as SearchIcon } from 'lucide-react'
+import { Rocket, Bell, Code, RefreshCw, Package, Download, Hammer, XCircle, Check, AlertTriangle, X, Coins, Compass, LayoutGrid, Fullscreen, Menu, PanelLeft, ArrowLeftToLine, SquareTerminal, Bot, Smartphone, Search as SearchIcon } from 'lucide-react'
 import { useFirstRunChapters, FirstRunChapters } from './shell/boot/firstRun'
 import ErrorNotice from './components/ErrorNotice'
 import { PREVIEW_EXPAND_EVENT } from './components/WebPreviewPanel'
@@ -137,7 +137,7 @@ import { NAV_ITEMS } from './shell/nav/navItems'
 import { useNavTip } from './shell/nav/navTip'
 import { isChatRoute, useRouteActiveModel } from './shell/nav/routeActive'
 import { useDeveloperMode } from './shell/nav/developerMode'
-import { RailHeaderGlyph, RailBrandToggle, RailCommunityLinks } from './shell/nav/railChrome'
+import { RailHeaderGlyph, RailCommunityLinks } from './shell/nav/railChrome'
 
 // Lazy on purpose: the update-found popup (its policy module, Trans runtime
 // wiring, and mutation plumbing) is dead weight for every session without an
@@ -2293,17 +2293,28 @@ export default function App() {
         {/* Top-fixed: menu row + primary destinations + Apps section header.
             The sidebar toggle lives HERE (menu row), not in the topbar. */}
         <div className="shrink-0 flex flex-col gap-0.5 px-2 pt-2">
-          <RailBrandToggle effectiveCollapsed={effectiveCollapsed} toggleNav={toggleNav} avatar={avatar} branding={branding} botName={botName} />
-          {/* The current-crew identity switcher sits just under the brand/
-              collapse header: it names the crew on screen and switches crews,
-              without displacing the brand mark or the sidebar collapse control.
-              Rendered only when there is a crew to switch to (InstanceTabBar's
-              navigation variant self-hides to the identity when none exist). */}
-          <div className="mb-1">
-            <InstanceTabBar variant="navigation" collapsed={effectiveCollapsed} />
+          {/* The crew identity switcher IS the rail header — one identity that
+              names the crew on screen and switches crews, replacing the former
+              brand toggle (no stacked brand glyph + identity mark). A compact
+              collapse control shares the row; the source branch collapsed from
+              an edge grabber, which was dropped, so the rail keeps an explicit
+              toggle (also bound to the sidebar keyboard shortcut). */}
+          <div className={`flex mb-1.5 ${effectiveCollapsed ? 'flex-col items-center gap-1' : 'items-center gap-1'}`}>
+            <div className="min-w-0 flex-1">
+              <InstanceTabBar variant="navigation" collapsed={effectiveCollapsed} />
+            </div>
+            <button
+              type="button"
+              onClick={toggleNav}
+              title={effectiveCollapsed ? i18nT('app.expand_sidebar') : i18nT('app.collapse_sidebar')}
+              aria-label={effectiveCollapsed ? i18nT('app.expand_sidebar') : i18nT('app.collapse_sidebar')}
+              aria-expanded={!effectiveCollapsed}
+              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-md bg-transparent border-none cursor-pointer text-muted hover:text-text hover:bg-bg-hover focus-ring"
+            >
+              {effectiveCollapsed ? <PanelLeft size={16} /> : <ArrowLeftToLine size={15} />}
+            </button>
           </div>
-          {/* Hairline under the expanded header (collapsed rail has none —
-              the big logo alone separates well). */}
+          {/* Hairline under the expanded header (collapsed rail has none). */}
           {!effectiveCollapsed && <div aria-hidden="true" className="h-px bg-border shrink-0 mb-[7px]" />}
           {advertisedNavItems.filter(n => n.group === 'Main').map(n => <div key={n.id}>{renderNavRow(n)}</div>)}
           {/* Apps section: the old single "Explore" header link split into two
