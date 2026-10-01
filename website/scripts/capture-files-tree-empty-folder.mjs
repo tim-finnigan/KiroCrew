@@ -1,8 +1,8 @@
 /**
  * Screenshot harness for the workspace tree's STATE ROW under a childless
  * folder (#13054): "Empty folder", "Contains only hidden items (dotfiles,
- * caches)", "Link to another folder: contents not listed", "Files not shown:
- * file limit of 10,000 reached" -- for the truncation badge that yields
+ * caches)", "Link to another folder: contents not listed", "Not shown:
+ * limit of 10,000 items reached" -- for the truncation badge that yields
  * to its own state row while the folder is expanded, for the folder the server
  * could not read (no state row beneath it, a lock marker on its row, and a
  * "Folders not readable" alert with the agent hand-off above the tree that the
@@ -21,7 +21,7 @@
  *
  * Fixture: the reporter's shape. A NON-repository workspace whose `_bg/` holds
  * only a hidden `.kiro/` folder (`hiddenOnlyDirectories`), an `empty/` folder
- * that is empty on disk, a `big/` folder whose files fell to the file cap
+ * that is empty on disk, a `big/` folder whose files fell to the row cap
  * (`truncatedDirectories`), a `vault/` folder whose only entry `locked/` the
  * server could not read (`unreadableDirectories` -- the folder is listed as a
  * row of its own, nothing is claimed beneath it, its row carries the lock
@@ -42,7 +42,7 @@
  *                                  notice until another folder becomes
  *                                  unreadable"
  *   <prefix>-11-bg-collapsed       `_bg` and `big` collapsed again (their rows
- *                                  must go; `big`'s "files not shown" badge is
+ *                                  must go; `big`'s "some items not shown" badge is
  *                                  back on the closed folder; `vault/locked`
  *                                  keeps its marker)
  *   <prefix>-12-filter-active      "b" typed in the rail's filter: `_bg`, `big`
@@ -168,16 +168,16 @@ const TREE_ROOT_HIDDEN_ONLY = {
 const STATE_LABELS = {
   '_bg/': 'Contains only hidden items (dotfiles, caches)',
   'empty/': 'Empty folder',
-  'big/': 'Files not shown: file limit of 10,000 reached',
+  'big/': 'Not shown: limit of 10,000 items reached',
   // `deploy/` holds only the link, so Pierre's `flattenEmptyDirectories` paints
   // the pair as one row whose path is the terminal directory.
   'deploy/current/': 'Link to another folder: contents not listed',
 }
-// The truncation badge on the folder row. Post-fix it says "files not shown"
+// The truncation badge on the folder row. Post-fix it says "some items not shown"
 // and yields while the folder is expanded (its state row says the same thing);
 // a pre-fix dist paints the old "files hidden" whether the folder is open or
 // not -- the collision with the hidden-only row's vocabulary this PR removes.
-const TRUNCATED_BADGE = EXPECT_STATE_ROWS ? 'files not shown' : 'files hidden'
+const TRUNCATED_BADGE = EXPECT_STATE_ROWS ? 'some items not shown' : 'files hidden'
 // The accessible label of the lock marker on a folder the server could not
 // read: it points at the notice above the tree, which is where the failure is
 // reported, and states no failure of its own.

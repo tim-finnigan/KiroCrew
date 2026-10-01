@@ -411,6 +411,27 @@ describe('FolderPanel — project-root workspace tree', () => {
     expect(api.fileSearch).not.toHaveBeenCalled()
   })
 
+  it('sends the search to the server when the tree payload is truncated', async () => {
+    // A truncated tree holds only the rows inside the server's cap, so its own
+    // filter cannot find what was never listed: the query takes the recursive
+    // search, whose matches stand in for the tree until it is cleared.
+    vi.spyOn(api, 'projectTree').mockResolvedValue(
+      { root: ROOT, paths: ['README.md'], directories: [], repo: false, truncated: true } as never,
+    )
+    vi.spyOn(api, 'fileSearch').mockResolvedValue({
+      root: ROOT,
+      results: [{ path: `${ROOT}/deep/past/the/cap/readme.txt`, name: 'readme.txt' }],
+    } as never)
+    renderPanel({ path: ROOT, projectDir: ROOT })
+    await waitFor(() => expect(tree()).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'read' } })
+    await waitFor(() => expect(api.fileSearch).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByText('readme.txt')).toBeTruthy())
+    expect(screen.queryByTestId('tree')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Search files'), { target: { value: '' } })
+    await waitFor(() => expect(tree().getAttribute('data-query')).toBe(''))
+  })
+
   it('refreshes the queries the tree reads, not the directory listing', async () => {
     renderPanel({ path: ROOT, projectDir: ROOT })
     await waitFor(() => expect(api.projectTree).toHaveBeenCalledTimes(1))

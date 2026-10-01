@@ -146,8 +146,11 @@ const SEARCH_DEBOUNCE_MS = 200
  * already on screen. `/api/file-search?project=<cwd>&kinds=files` walks the
  * subtree under its own scan budget and re-applies the sensitive-path refusal per
  * hit. In tree mode the same input feeds the tree's own search session instead:
- * the tree already holds the whole path set, so filtering is local and instant
- * and a second endpoint would be redundant.
+ * the tree then holds the whole path set, so filtering is local and instant and
+ * a second endpoint would be redundant. A TRUNCATED tree does not hold every
+ * path -- the server capped its rows -- so for one the query takes the
+ * recursive search too, and its matches stand in for the tree until the query
+ * is cleared (see `treeFiltersLocally`).
  */
 export default function FolderPanel({ path, projectDir, onClose, onFileOpen, onAddToContext, onPathChange }: {
   path: string
@@ -183,8 +186,13 @@ export default function FolderPanel({ path, projectDir, onClose, onFileOpen, onA
   // The failed read's own error, for the tree notice below: its cause picks the copy and its
   // report feeds the hand-off, neither of which the state verdict carries. Same key as the probe
   // above, so this is a second observer on the one request, not a second request.
-  const { error: treeErr } = useTreeQuery(atProjectRoot ? projectDir : null)
+  const { error: treeErr, data: treeData } = useTreeQuery(atProjectRoot ? projectDir : null)
   const treeMode = atProjectRoot && treeState === 'ready'
+  // The tree's own filter can only find what the tree lists, so it stands in for
+  // the recursive search only while the payload is whole. A truncated payload
+  // (the server capped its rows) sends the query to the search instead, which
+  // reaches the whole project.
+  const treeFiltersLocally = treeMode && treeData?.truncated !== true
 
   // A different query is a different search: expansion applies to the result set
   // the user was looking at, not to whatever they type next. Also covers
@@ -223,7 +231,9 @@ export default function FolderPanel({ path, projectDir, onClose, onFileOpen, onA
   // Driven by the DEBOUNCED value, so the listing does not blink away on the
   // first keystroke and back on a backspace. Tree mode filters the tree it
   // already holds, so it never spends this request.
-  const searching = !treeMode && debouncedQuery.length >= MIN_QUERY_LEN
+  const searching = !treeFiltersLocally && debouncedQuery.length >= MIN_QUERY_LEN
+  // Tree mode shows the tree unless the search has taken over the body.
+  const showTree = treeMode && !searching
   const {
     data: searchData,
     isFetching: isSearching,
@@ -301,6 +311,12 @@ export default function FolderPanel({ path, projectDir, onClose, onFileOpen, onA
       await Promise.all([
         qc.refetchQueries({ queryKey: ['project-tree', projectDir] }),
         qc.refetchQueries({ queryKey: ['git-status', projectDir] }),
+        ...(searching
+          ? [qc.refetchQueries({
+              queryKey: ['folder-file-search', cwd, debouncedQuery, searchLimit],
+              exact: true,
+            })]
+          : []),
       ])
     } finally {
       setRefreshing(false)
@@ -321,7 +337,7 @@ export default function FolderPanel({ path, projectDir, onClose, onFileOpen, onA
   // appear, so the width neither changes per keystroke (an in-flight read toggles on each one)
   // nor jumps under a cursor already reaching for the control when a timeout names it. Tree
   // mode filters locally and spends no request, so no query can name Refresh there.
-  const holdsSearchableQuery = !treeMode && query.trim().length >= MIN_QUERY_LEN
+  const holdsSearchableQuery = !treeFiltersLocally && query.trim().length >= MIN_QUERY_LEN
   // The label's width is held for the whole of any window the USER opened in which a retryable
   // failure can name this control -- a pressed Refresh (`refreshing`, the press's own bracket)
   // and a searchable query -- and for as long as one does name it. Never for a read the user did
@@ -442,7 +458,7 @@ export default function FolderPanel({ path, projectDir, onClose, onFileOpen, onA
           autoComplete="off"
           className="min-w-0 flex-1 bg-transparent border-none outline-hidden text-[12px] text-text placeholder:text-muted"
         />
-        {treeMode && query && (
+        {treeFiltersLocally && query && (
           // The same box does two different things in the two bodies: a recursive
           // request that returns a flat "Matches" list, or a filter over the tree
           // already on screen. Listing mode says "includes subfolders" above its
@@ -464,9 +480,9 @@ export default function FolderPanel({ path, projectDir, onClose, onFileOpen, onA
           </button>
         )}
       </div>
-      <div className={treeMode ? 'flex-1 min-h-0 flex flex-col py-1.5' : 'flex-1 overflow-y-auto px-2 py-1.5'}>
-        <div className={`shrink-0 text-[10.5px] text-muted/80 font-mono truncate pb-1.5 ${treeMode ? 'px-3' : 'px-2'}`} title={cwd}>{cwd}</div>
-        {treeMode ? (
+      <div className={showTree ? 'flex-1 min-h-0 flex flex-col py-1.5' : 'flex-1 overflow-y-auto px-2 py-1.5'}>
+        <div className={`shrink-0 text-[10.5px] text-muted/80 font-mono truncate pb-1.5 ${showTree ? 'px-3' : 'px-2'}`} title={cwd}>{cwd}</div>
+        {showTree ? (
           <>
             {/* Kept in tree mode so the tab can still step OUT of the project —
                 the one navigation the tree cannot express, since the endpoint
@@ -487,7 +503,7 @@ export default function FolderPanel({ path, projectDir, onClose, onFileOpen, onA
                 projectDir={projectDir ?? ''}
                 onFileOpen={onFileOpen}
                 onAddToContext={onAddToContext}
-                searchQuery={query || null}
+                searchQuery={treeFiltersLocally ? query || null : null}
               />
             </div>
           </>
