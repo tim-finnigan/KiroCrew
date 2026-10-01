@@ -1484,18 +1484,13 @@ export default function App() {
           aria-label={i18nT('app.main_navigation')}
           className="w-[72px] shrink-0 h-full flex flex-col items-center gap-1 pt-1.5 pb-2.5 border-r border-border bg-bg-accent overflow-hidden"
         >
-          <button
-            type="button"
-            data-testid="mobile-nav-rail-home"
-            onClick={() => { onActivate(); if (!(activePath === '/chat' || activePath === '/')) navigate('/chat', { replace: true }) }}
-            className="w-11 h-11 mb-1 flex items-center justify-center shrink-0 rounded-xl bg-transparent border-none cursor-pointer"
-            // Named for what it DOES (home = the chat root), not for the brand
-            // it shows: an icon-only control announced as the product name told
-            // a screen-reader user nothing about where the tap goes.
-            aria-label={i18nT('nav.home')}
-          >
-            <RailHeaderGlyph avatar={avatar} boxClass={branding?.logoClass ?? 'w-7 h-7'} iconSize={18} />
-          </button>
+          {/* The current-crew chooser leads the rail (replacing the former Home
+              brand mark): it names the crew on screen and is the switcher, with
+              the collapsed identity mark as the glyph. The desktop header's
+              inline switcher is not rendered on the phone. */}
+          <div data-testid="mobile-nav-rail-crew" className="w-full px-1 mb-1 shrink-0">
+            <InstanceTabBar variant="navigation" collapsed />
+          </div>
           {advertisedNavItems.filter(n => n.group === 'Main').map(railRow)}
           <NavItem
             navId="apps"

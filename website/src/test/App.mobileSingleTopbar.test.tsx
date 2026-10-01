@@ -141,9 +141,9 @@ describe('phone chat page: one top bar', () => {
     expect(within(rail).getByRole('button', { name: 'Settings' })).not.toHaveClass('nav-active')
     // Search moved here from the bar, same label, same command palette.
     expect(within(rail).getByTestId('mobile-nav-rail-search')).toHaveAccessibleName('Search sessions, files, and commands')
-    // The brand mark is a control (home = chat root), not an inert picture in
-    // the position every other app puts a tappable logo.
-    expect(within(rail).getByTestId('mobile-nav-rail-home')).toHaveAccessibleName()
+    // The current-crew chooser leads the rail (replacing the former Home brand
+    // mark): it names the crew on screen and opens the switcher.
+    expect(within(rail).getByTestId('navigation-crew-switcher')).toHaveAccessibleName()
     // Every tile carries a visible caption: a finger cannot summon the desktop
     // rail's hover tip, so the full Customize name stays visible.
     const customize = within(rail).getByRole('button', { name: 'Customize' })
@@ -153,13 +153,13 @@ describe('phone chat page: one top bar', () => {
     // (icon-only, 56px wide), so every row must be named.
     for (const row of within(rail).getAllByRole('button')) expect(row).toHaveAccessibleName()
     // Only the Apps list scrolls (its own frame, like the desktop rail); the
-    // brand mark above and Customize / Settings / Search below stay pinned,
+    // crew chooser above and Customize / Settings / Search below stay pinned,
     // so 14 installed apps cannot push Settings off the bottom of the screen.
     expect(rail).toHaveClass('overflow-hidden')
     expect(rail).not.toHaveClass('overflow-y-auto')
     const apps = within(rail).getByTestId('mobile-nav-rail-apps')
     expect(apps).toHaveClass('overflow-y-auto', 'flex-1', 'min-h-0')
-    expect(apps).not.toContainElement(within(rail).getByTestId('mobile-nav-rail-home'))
+    expect(apps).not.toContainElement(within(rail).getByTestId('mobile-nav-rail-crew'))
     expect(apps).not.toContainElement(within(rail).getByTestId('mobile-nav-rail-search'))
     expect(apps).not.toContainElement(within(rail).getByRole('button', { name: 'Settings' }))
     expect(apps).not.toContainElement(customize)
