@@ -696,7 +696,7 @@ function SwitcherMenu({
           data-testid={navigation ? 'navigation-crew-switcher' : undefined}
           data-keyboard-focus={navigation && keyboardInput ? 'true' : undefined}
           className={navigation
-            ? 'relative flex items-center justify-start w-full h-12 gap-2.5 px-[11px] min-w-0 border-0 bg-transparent text-text outline-none cursor-pointer data-[keyboard-focus=true]:focus-visible:bg-bg-hover'
+            ? `relative flex items-center h-12 gap-2.5 min-w-0 border-0 bg-transparent text-text outline-none cursor-pointer data-[keyboard-focus=true]:focus-visible:bg-bg-hover ${collapsed ? 'justify-center w-full px-0' : 'justify-start w-full px-[11px]'}`
             : 'relative flex items-center justify-center h-6 w-6 shrink-0 rounded-md border border-transparent text-muted transition-colors hover:bg-bg-hover hover:text-text focus-ring'}
         >
           {navigation && active ? (

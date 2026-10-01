@@ -2298,6 +2298,19 @@ file-tree-container{
 .mobile-chrome > header.topbar-glass{background:var(--chrome);color:var(--text);box-shadow:none}
 .mobile-chrome > .dashboard-surface{border-top:1px solid var(--border);border-radius:8px 8px 0 0;overflow:hidden;background:var(--bg);color:var(--text)}
 .mobile-navigation-rail .nav-item.nav-active{background:transparent;color:var(--text);filter:none}
+/* On the flat chrome top bar the Liquid Glass pills (the readout capsule with
+   its tokens + system metrics, and the Request a Feature pill) read as raised
+   cards against the --chrome surface, so neutralise their glass pane there:
+   no shadow, no tint fill, no refraction highlight — they sit flush on the
+   chrome. The search trigger keeps its glass (not requested). */
+.grabber-shell .tb-capsule, .mobile-chrome .tb-capsule,
+.grabber-shell [data-testid="feedback-pill"], .mobile-chrome [data-testid="feedback-pill"]{
+  background:transparent;box-shadow:none;border-color:transparent;
+}
+.grabber-shell .tb-capsule::before, .mobile-chrome .tb-capsule::before,
+.grabber-shell [data-testid="feedback-pill"]::before, .mobile-chrome [data-testid="feedback-pill"]::before{
+  display:none;
+}
 
 /* ── Frameless Electron window (macOS) ──
    The SPA header row doubles as the title bar; the native traffic lights are
