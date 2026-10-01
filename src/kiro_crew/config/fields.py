@@ -74,6 +74,28 @@ def _safe_bool(value: object, default: bool) -> bool:
     return value if isinstance(value, bool) else default
 
 
+def _coerce_bool(value: object, default: bool) -> bool:
+    """As :func:`_safe_bool`, but reading the spellings a hand edit produces.
+
+    ``config.json`` is hand-editable and ``bool("false")`` is ``True``, so a
+    field whose two wrong answers are not symmetric cannot fold every non-bool
+    to its own default: ``"false"`` has to mean False. A real bool is returned
+    as-is; ``true``/``false``/``1``/``0``/``yes``/``no``/``on``/``off``
+    (case-insensitive) map to their value; anything else falls back to *default*,
+    which the caller picks to fail safe. Same rule as ``hooks._coerce_bool``,
+    which protects the opt-out flags for the same reason.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        spelling = value.strip().lower()
+        if spelling in ("true", "1", "yes", "on"):
+            return True
+        if spelling in ("false", "0", "no", "off"):
+            return False
+    return default
+
+
 def _safe_list(value: object) -> list:
     """Return *value* if it is a list, else []. Guards list()/comprehensions in
     config parse against a malformed (non-list) config value that would either
