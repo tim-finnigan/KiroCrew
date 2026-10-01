@@ -10,7 +10,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { configureStore } from '@reduxjs/toolkit'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import chatReducer from '../store/chatSlice'
+import chatReducer, { switchSlot } from '../store/chatSlice'
 import dashboardReducer from '../store/dashboardSlice'
 import notificationsReducer from '../store/notificationsSlice'
 import { ThemeProvider } from '../hooks/useTheme'
@@ -143,6 +143,54 @@ describe('memory chip above the composer', () => {
     await waitFor(() => expect(deleteChatSlot).toHaveBeenCalledWith('slot-a'))
     // deleteSlot rethrows its own 'save failed' in place of the API error.
     await waitFor(() => expect(screen.getByTestId('action-error')).toHaveTextContent('save failed'))
+  })
+
+  it('keeps the unsent draft when switching memory mode, both directions', async () => {
+    createChatSlot
+      .mockResolvedValueOnce({ key: 'slot-b', messages: 0, running: false, memory_mode: 'incognito' })
+      .mockResolvedValueOnce({ key: 'slot-c', messages: 0, running: false, memory_mode: 'persistent' })
+    const store = await renderWith({ messages: [] })
+    const composer = () => screen.getAllByRole('textbox').at(-1)! as HTMLTextAreaElement
+
+    fireEvent.change(composer(), { target: { value: 'half-written prompt' } })
+    expect(composer().value).toBe('half-written prompt')
+
+    fireEvent.click(screen.getByText('Choose memory mode').closest('button')!)
+    fireEvent.click(screen.getByText('Incognito').closest('button')!)
+    await waitFor(() => expect(store.getState().chat.activeSlot).toBe('slot-b'))
+    await waitFor(() => expect(deleteChatSlot).toHaveBeenCalledWith('slot-a'))
+    await waitFor(() => expect(composer().value).toBe('half-written prompt'))
+
+    // And back: the "switch to persistent" chip recreates the slot again.
+    fireEvent.change(composer(), { target: { value: 'half-written prompt, more' } })
+    fireEvent.click(screen.getByTestId('memory-mode-chip'))
+    await waitFor(() => expect(store.getState().chat.activeSlot).toBe('slot-c'))
+    await waitFor(() => expect(composer().value).toBe('half-written prompt, more'))
+  })
+
+  it('abandons the switch, keeping the old session, when the user navigates away mid-create', async () => {
+    let resolveCreate: (v: unknown) => void = () => {}
+    createChatSlot.mockImplementationOnce(() => new Promise(r => { resolveCreate = r }))
+    deleteChatSlot.mockClear()
+    const store = await renderWith({ messages: [], slotKeys: ['slot-a', 'slot-x'] })
+    const composer = () => screen.getAllByRole('textbox').at(-1)! as HTMLTextAreaElement
+
+    fireEvent.change(composer(), { target: { value: 'draft in A' } })
+    fireEvent.click(screen.getByText('Choose memory mode').closest('button')!)
+    fireEvent.click(screen.getByText('Incognito').closest('button')!)
+    await waitFor(() => expect(createChatSlot).toHaveBeenCalled())
+
+    // The user opens another session while the create is still pending.
+    await act(async () => { await store.dispatch(switchSlot('slot-x')) })
+    expect(store.getState().chat.activeSlot).toBe('slot-x')
+
+    await act(async () => { resolveCreate({ key: 'slot-b', messages: 0, running: false, memory_mode: 'incognito' }) })
+
+    // The unused replacement is dropped; slot A (and its draft) survives and
+    // the view stays where the user put it.
+    await waitFor(() => expect(deleteChatSlot).toHaveBeenCalledWith('slot-b'))
+    expect(deleteChatSlot).not.toHaveBeenCalledWith('slot-a')
+    expect(store.getState().chat.activeSlot).toBe('slot-x')
   })
 
   it('is absent once the session has messages', async () => {
