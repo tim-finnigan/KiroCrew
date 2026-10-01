@@ -139,6 +139,33 @@ stale path in the global shadow the fresh path the gateway just resolved.
 Kiro Crew forces `false` on every agent it manages (the primary agent and every
 app agent). Plain kiro-cli agents outside Kiro Crew keep kiro-cli's own default.
 
+### Refused shared agent home: the session channel
+
+Because the flag is pinned false, a rebuild is the only way an `mcp.json`
+server reaches the primary agent's sessions. An instance on a non-default
+`KIROCREW_HOME` that shares `~/.kiro/agents` with another install has every
+rebuild refused (`_decline_shared_agent_home`), so the other install's spec is
+never written. On that refusal the rebuild still runs its MCP passes in memory
+(`mcp_declined_home.compute_projection`) over this instance's own sources and
+keeps what a written spec would have mounted in process memory, keyed by the
+sources' fingerprint. Nothing is persisted: a file in the data home would let
+anything that can write there choose the next session's launched command. Both
+`session/new` paths (`AcpClient._pooled_mcp_servers` and
+`AcpRuntime._with_declined_home_servers`, kiro and KAS) recompute it when the
+sources moved and append those stdio servers after the gateway stubs.
+
+The projection is filtered by the same predicates as the written spec:
+user-installed sources only (by the alias the rebuild actually mounted, so a
+collision-suffixed name still counts), muted servers dropped, nothing in
+registry mode, primary agent only, and no name the shared spec or a stub
+already mounts. Only `command`, `args` and `env` are retained, each bounded by
+the module's named caps (`MAX_DELIVERED_SERVERS`, `MAX_SERVER_ARGS`,
+`MAX_SERVER_ENV`, `MAX_FIELD_CHARS`); an entry past a bound is refused whole and
+logged. No `autoApprove` rides along. Remote (`url`) servers are not delivered
+and are named in a gateway warning instead. A rebuild that does write a spec
+clears the projection, so the two channels never both mount a server. Change
+the spec-mounting predicates here and in `mcp_declined_home` together.
+
 ### Managed servers
 
 `agent._MANAGED_MCP_SERVERS` holds the eight servers the gateway owns end to
