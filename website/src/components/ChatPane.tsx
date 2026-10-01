@@ -549,10 +549,9 @@ export default function ChatPane({
   // hides it (ts-keyed, index fallback — see ChatMessageList.hiddenRow);
   // memoised so the memo'd list does not re-render on every pane render.
   // `stripUncovered` is the hook's BOOLEAN "the row's action strip is still on
-  // screen below the card" (derived from occlusion, see usePinnedPrompt), not
-  // the fold height: liveH moves every scroll frame of the fold, and keying the
-  // memo on it would re-render the list per frame for a marker that only flips
-  // at its two edges.
+  // screen below the card" (derived from occlusion, see usePinnedPrompt), not a
+  // per-frame distance: keying the memo on one would re-render the list per
+  // scroll frame for a marker that only flips at its two edges.
   const pinnedState = pin.pinned
   const pinnedTs = pinnedState?.ts
   const pinnedIdx = pinnedState?.idx
@@ -1616,7 +1615,6 @@ export default function ChatPane({
                 images={pinnedState.images}
                 bodyBeyondPreview={pinnedState.bodyBeyondPreview}
                 pushUp={pinnedState.push}
-                liveH={pinnedState.liveH}
                 maxH={pinnedState.maxH}
                 bannerH={pinnedState.bannerH}
                 expanded={pin.pinExpanded}

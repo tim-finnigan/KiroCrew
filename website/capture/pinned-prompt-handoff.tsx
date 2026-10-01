@@ -156,7 +156,6 @@ function PinnedHost() {
             images={pinned.images}
             bodyBeyondPreview={pinned.bodyBeyondPreview}
             pushUp={pinned.push}
-            liveH={pinned.liveH}
             bannerH={pinned.bannerH}
             expanded={pinExpanded}
             onToggleExpanded={() => setPinExpanded(p => !p)}

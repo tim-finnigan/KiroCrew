@@ -25,9 +25,10 @@ import { type PasteBlock, expandAll } from './pasteTokens'
  * The hand-off line therefore does NOT depend on the card's height, and must not:
  * the clamp (`PINNED_RESTING_LINES`) is a presentation choice that may change, and
  * a hand-off derived from it moves the swap point with it. A prompt no taller than
- * the clamp hands over with no size change at all; a taller one FOLDS in place at
- * the line, animated by the card's own height morph (see PinnedPrompt), instead of
- * being swapped after a journey. Both fall out of the same rule at any clamp value.
+ * the clamp hands over with no size change at all; a taller one stays on screen
+ * as its own row until only the clamp's worth of it remains above the reply, and
+ * the card takes over at that line (see usePinnedPrompt). Both fall out of the
+ * same rule at any clamp value.
  *
  * The banner cannot be a real sticky element because the transcript is
  * virtualized — a row scrolled far above the window unmounts, so the sticky node
@@ -234,56 +235,13 @@ export function pinPushTravel(bannerH: number): number {
 }
 
 /**
- * Height the pinned card should be on this frame — the progressive fold.
- *
- * The card's top is fixed at `foldY + ROW_PAD_Y`. Its bottom should sit on the
- * pinned BUBBLE's bottom edge: the card is a stand-in for the bubble alone, and
- * what follows the bubble in its row — the message's action strip, then the
- * reply — is left in place under the hidden row (see `[data-pinned-standin]` in
- * index.css), so matching the bubble's edge is what keeps the card from ever
- * covering those controls while leaving no gap of its own. The height wanted is
- * therefore the distance from the card's top to the bubble's bottom.
- *
- * Bounded at both ends, and each bound is load-bearing:
- *   - never above `standinH`, the height the card has at the hand-off frame (from
- *     its own top to the bubble's bottom), so a freshly pinned prompt is a
- *     pixel-exact stand-in rather than a taller box that pushes the reply down.
- *     That is the bubble's height only when the bubble starts where the card does:
- *     a steer's accent bubble sits under its badge, so its stand-in is taller by
- *     that offset, and a ceiling of the bubble's own height stopped the card short
- *     of the bubble's bottom — a blank band above the strip for the first pixels
- *     of scroll after hand-off;
- *   - never below `restingH`, because the card cannot show less than its clamp. Past
- *     that point the bubble's slot is smaller than the card and the strip and reply
- *     slide under it, which is the same one-line overlap the band already has at rest.
- *
- * @param bubbleBottomFromFold pinned bubble's bottom edge, relative to the fold line
- * @param restingH             settled height of the clamped card
- * @param standinH             distance from the card's top to the bubble's bottom
- *                             at the hand-off frame — the card's natural height
- */
-export function computeLiveCardH(
-  bubbleBottomFromFold: number,
-  restingH: number,
-  standinH: number,
-): number {
-  // A stand-in smaller than the clamp (a one-word prompt) has nothing to fold: the
-  // card is already its resting size and the max() below would otherwise stretch
-  // it past the bubble it is copying.
-  const ceiling = Math.max(restingH, standinH)
-  const wanted = bubbleBottomFromFold - ROW_PAD_Y
-  return Math.min(ceiling, Math.max(restingH, wanted))
-}
-
-/**
  * The tallest the card may ever be: from its own top (`foldY + ROW_PAD_Y`) down
  * to the transcript's FLOOR — the line below which the scroller's content is no
  * longer meant to be read, i.e. the top of its bottom padding.
  *
  * The card lives in an overlay that is a sibling of the scroller and paints
- * above everything that follows it, so nothing else bounds it: the fold could
- * hold it at a 30-line prompt's full height (`computeLiveCardH`'s ceiling) and
- * the expansion at `40vh` plus an image strip, and on a short pane both ran past
+ * above everything that follows it, so nothing else bounds it: the expansion
+ * grows it to `40vh` plus an image strip, and on a short pane that ran past
  * the scroller's bottom and over the composer dock that floats there — the
  * reply's pinned bubble sat on the input box and the Dynamic Dashboard bar. The
  * transcript's own rows never do that: they scroll UNDER the dock, and the
@@ -581,41 +539,22 @@ export interface PinnedPromptState {
   push: number
   bannerH: number
   /**
-   * Height the card should be RIGHT NOW, in px — the progressive fold.
-   *
-   * The card stands in for a row whose slot is still laid out (the row is hidden,
-   * not removed), so a card SHORTER than that slot leaves a blank gap between
-   * itself and the reply below. That gap is the size of the difference: measured
-   * at 794px in a 700px viewport for a 30-line prompt against a one-line clamp.
-   * Tracking the slot's remaining height removes the gap by construction — the
-   * card is exactly as tall as the part of the row still above the reply, and it
-   * shrinks line by line as the row scrolls away until it reaches its clamp.
-   *
-   * Computed from the ROW, never from the card (see computeLiveCardH). A height
-   * derived from measuring the card would close a loop: the card's height feeds
-   * `onCollapsedHeight`, which feeds `pinHandoffY` and `pinPushTravel`, which move
-   * the geometry that decides the height. The resting height keeps that reporting
-   * role alone.
-   */
-  liveH?: number
-  /**
    * Ceiling on the card's height this frame — the distance from the card's top
-   * to the transcript floor (see computePinnedCardMaxH). Both the fold's `liveH`
-   * and the expansion's text cap stay under it, so the card can never paint
-   * past the scroller's content area onto the composer dock below. Recomputed
-   * every scroll frame alongside the rest of the geometry, and on a scroller
-   * resize.
+   * to the transcript floor (see computePinnedCardMaxH). The expansion's text
+   * cap stays under it, so the card can never paint past the scroller's content
+   * area onto the composer dock below. Recomputed every scroll frame alongside
+   * the rest of the geometry, and on a scroller resize.
    */
   maxH?: number
   /**
    * The hidden row's action strip is still UNCOVERED — some of it sits below the
    * card's resting bottom, on screen. The hosts write it as the `folding` value
    * of the row's `data-pinned-standin` marker, which is what index.css re-shows
-   * the strip on. Deliberately not `liveH != null`: the fold ends with the card
-   * at its clamp while the strip, which hangs under the bubble, is still wholly
-   * below the card, and it slides under over the next strip's-height of scroll —
-   * the marker has to hold until it has. A boolean rather than a distance, so the
-   * state only changes at the two edges where the marker flips.
+   * the strip on. The card takes over with the bubble's last line still above
+   * the reply, and the strip hangs under that line, so at that frame the whole
+   * strip is below the card and slides under over the next strip's-height of
+   * scroll — the marker has to hold until it has. A boolean rather than a
+   * distance, so the state only changes at the two edges where the marker flips.
    */
   stripUncovered?: boolean
 }
@@ -629,8 +568,6 @@ export interface PinnedPromptInput {
   pastes: PasteBlock[]
   push: number
   bannerH: number
-  /** See `PinnedPromptState.liveH`. Recomputed every scroll frame. */
-  liveH?: number
   /** See `PinnedPromptState.maxH`. Recomputed every scroll frame. */
   maxH?: number
   /** See `PinnedPromptState.stripUncovered`. Recomputed every scroll frame. */
@@ -654,16 +591,15 @@ export function nextPinnedPromptState(
   prev: PinnedPromptState | null,
   input: PinnedPromptInput,
 ): PinnedPromptState {
-  const { idx, ts, raw, pastes, push, bannerH, liveH, maxH, stripUncovered } = input
+  const { idx, ts, raw, pastes, push, bannerH, maxH, stripUncovered } = input
   const sameMsg = prev !== null && prev.idx === idx && prev.raw === raw && prev.ts === ts
-  if (sameMsg && prev.push === push && prev.bannerH === bannerH && prev.liveH === liveH
+  if (sameMsg && prev.push === push && prev.bannerH === bannerH
     && prev.maxH === maxH && prev.stripUncovered === stripUncovered) return prev
-  // `liveH` DOES move every frame — that is the fold. It is carried on the
-  // same-message path for exactly that reason, unlike `push`/`bannerH` which only
-  // change when the geometry does. `stripUncovered` flips on a later frame of
-  // the same pin (the strip slides under the resting card), so it rides here too,
-  // as does `maxH`, which moves when the pane or the dock does.
-  if (sameMsg) return { ...prev, push, bannerH, liveH, maxH, stripUncovered }
+  // `push`/`bannerH` only change when the geometry does. `stripUncovered` flips
+  // on a later frame of the same pin (the strip slides under the resting card),
+  // so it rides the same-message path too, as does `maxH`, which moves when the
+  // pane or the dock does.
+  if (sameMsg) return { ...prev, push, bannerH, maxH, stripUncovered }
   const { text, body: full, images } = derivePinnedPromptText(raw, pastes)
   return {
     idx,
@@ -677,7 +613,6 @@ export function nextPinnedPromptState(
     bodyBeyondPreview: full !== text,
     push,
     bannerH,
-    liveH,
     maxH,
     stripUncovered,
   }

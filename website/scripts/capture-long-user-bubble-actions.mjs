@@ -1,23 +1,29 @@
 /**
- * Screenshot harness for the action strip under a pinned long user prompt.
+ * Screenshot harness for the one-line pinned-prompt hand-off and the action
+ * strip under it.
  *
- * A user prompt taller than the viewport hands over to the pinned-prompt card
- * the moment its row top crosses the fold, and its row is hidden for as long as
- * the card stands in for it. The row also carries the message's action strip
- * (copy, copy link, pin, timestamp), so before the fix that strip was never on
- * screen for a tall prompt: its bottom only comes into view once its top is
- * above the fold, i.e. once the whole row is hidden. This scene drives the REAL
- * transcript (built SPA, `/api/**` fixtures) into exactly that state and reads
- * the strip's fate off the live DOM, not the pixels alone:
+ * A user prompt taller than the viewport stays on screen as its own row while
+ * more than one line of its bubble is above the reply: no pinned card, and the
+ * row's own action strip (copy, copy link, pin, timestamp) is reachable there
+ * like any other row's. Only once the bubble's last line is all that remains
+ * above the reply does the one-line card take over and the row hide; the strip,
+ * hanging under that line, is then still below the card and is re-shown in place
+ * until it has slid under. This scene drives the REAL transcript (built SPA,
+ * `/api/**` fixtures) through both frames and reads the card's and the strip's
+ * fate off the live DOM, not the pixels alone:
  *
- *   - `expected=after`  (fixed build): the strip is visible and hit-testable
- *     beneath the card, the card's bottom sits at or above the strip, the pin
- *     control is there (the fixture messages carry `meta.mid`, which is what
- *     makes a message pinnable), the Edit pencil is dropped while the row is the
- *     stand-in and present once it is not, and a click on Copy lands (the button
- *     flips to its copied state).
- *   - `expected=before` (unfixed build): the strip is `visibility: hidden` with
- *     the row — the defect, recorded so the pair is evidence of a change.
+ *   - `expected=after`  (one-line build): with the tall bubble mostly on screen
+ *     there is NO card and the row is not hidden, its strip is visible on hover
+ *     and hit-testable, a click on Copy lands (the button flips to its copied
+ *     state) and the Edit pencil is present; with one line left the card is
+ *     mounted at its resting height, the row is the stand-in, the strip is
+ *     visible beneath the card and not covered by it, and the pin control is
+ *     there (the fixture messages carry `meta.mid`, which is what makes a
+ *     message pinnable).
+ *   - `expected=before` (a build that folded the card down the bubble's
+ *     remaining height): with the tall bubble mostly on screen the row is
+ *     already hidden and a card far taller than one line stands in for it —
+ *     recorded so the pair is evidence of a change.
  *
  * Usage, from website/ after `npm run build`:
  *   node scripts/capture-long-user-bubble-actions.mjs [outDir] [--dist DIR] [--expected before|after]
@@ -70,7 +76,7 @@ const REPLY = [
   '',
   'Everything else is ordered correctly. Steps 1-11 can run in parallel; the rest is strictly serial.',
 ].join('\n')
-// A prompt short enough to sit whole on screen unpinned, tall enough to fold.
+// A prompt short enough to sit whole on screen unpinned, taller than one line.
 const MEDIUM_PROMPT = [
   'Three constraints before you touch the plan:',
   'Constraint A: the cache and queue steps must never run in the same window.',
@@ -194,9 +200,8 @@ async function placeRowTop(page, marker, frac) {
 }
 
 /** Scroll so the marked prompt's row TOP sits `px` below the pinned card's fold
- *  line (negative = above it): the fold is where a prompt hands over, so a small
- *  negative value puts a short prompt into its folding stand-in state with its
- *  bottom, and the strip beneath it, still on screen. */
+ *  line (negative = above it): a small negative value puts a prompt's top just
+ *  past the fold with its bubble, and the strip beneath it, still on screen. */
 async function placeRowTopFromFold(page, marker, px) {
   await page.evaluate(([needle, dy]) => {
     const rows = [...document.querySelectorAll('[data-display-index]')]
@@ -246,11 +251,12 @@ async function scrollBy(page, total, step = 14, pauseMs = 28) {
 
 /**
  * Recording: the states a still cannot carry. One long prompt scrolled from
- * unpinned through hand-off and the fold to the card's rest (the strip appears
- * under the folding card, then re-hides at rest), then back up; then the
- * five-line prompt hovered unpinned (pencil present), scrolled into its stand-in
- * state (pencil gone, the rest of the strip in place) and back. Both directions,
- * dark theme, at the viewport size so the seam stays legible.
+ * unpinned, its row staying on screen past the fold, to the one-line hand-off
+ * and the card's rest (the strip shows under the card, then re-hides once it has
+ * slid under), then back up; then the five-line prompt hovered unpinned (pencil
+ * present), scrolled into its stand-in state (pencil gone, the rest of the strip
+ * in place) and back. Both directions, dark theme, at the viewport size so the
+ * seam stays legible.
  */
 async function record() {
   const { mkdirSync: mk } = await import('node:fs')
@@ -269,10 +275,10 @@ async function record() {
   await placeRowTopFromFold(h.page, LONG, 260)
   await h.page.waitForTimeout(1200)
   const g0 = await inspect(h.page, LONG)
-  // Down: through the hand-off (row top crosses the fold), the fold (card bottom
-  // tracks the bubble bottom, strip visible beneath it), to rest (card at its
-  // clamp, strip hidden again). Total travel: row top from fold+260 to the point
-  // where the bubble bottom sits 40px under the fold.
+  // Down: the row's top crosses the fold with no card yet, the one-line card
+  // takes over as the bubble's last line reaches it (strip visible beneath the
+  // card), then the strip slides under and hides again. Total travel: row top
+  // from fold+260 to the point where the bubble bottom sits 40px under the fold.
   const travel = Math.round(260 + g0.bubble.height + ROW_PAD - 40)
   await scrollBy(h.page, travel)
   await h.page.waitForTimeout(1400)
@@ -318,59 +324,70 @@ async function main() {
   for (const theme of ['dark', 'light']) {
     await h.load(theme, { selector: 'textarea[data-composer-input]', settle: 1200 })
     // The transcript boots at its bottom. Bring the long prompt's bottom to
-    // mid-viewport: its top is then far above the fold, so the row is the pinned
-    // stand-in and its strip sits under the folding card.
+    // mid-viewport: its top is then far above the fold, with half a viewport of
+    // bubble still above the reply — far more than the one line the card shows,
+    // so the row stays on screen as itself and no card stands in for it.
     await placeBubbleBottom(h.page, LONG, 0.5)
-    await placeBubbleBottom(h.page, LONG, 0.5) // second pass: the fold re-measured heights after the first
-    const g = await inspect(h.page, LONG)
+    await placeBubbleBottom(h.page, LONG, 0.5) // second pass: heights re-measured after the first
+    let g = await inspect(h.page, LONG)
     if (g.error) { assert(g.error, false); break }
-    console.log(`${theme}: ${JSON.stringify(g)}`)
-    assert(`${theme}: long prompt row is the pinned stand-in (hidden by visibility)`, g.rowHidden)
-    assert(`${theme}: pinned card is mounted`, !!g.card)
     assert(`${theme}: bubble bottom is on screen (${Math.round(g.bubble?.bottom ?? -1)}px of ${g.viewport.h})`,
       !!g.bubble && g.bubble.bottom > 0 && g.bubble.bottom < g.viewport.h)
     assert(`${theme}: the action strip renders inside the row, with a pin control`, !!g.strip && !!g.copy && !!g.pin)
     if (EXPECTED === 'after') {
-      assert(`${theme}: row carries data-pinned-standin="folding" while the card folds (value ${JSON.stringify(g.rowStandinValue)})`, g.rowStandinValue === 'folding')
-      assert(`${theme}: strip is visible (computed ${g.strip?.visibility}, opacity ${g.strip?.opacity})`,
+      // The strip is the row's own hover-revealed one here, so rest the pointer on
+      // the visible part of the bubble (a locator hover would scroll the row into
+      // view and undo the placement) and wait out the reveal's delay + transition.
+      await h.page.mouse.move((g.bubble.left + g.bubble.right) / 2, g.bubble.bottom - 30)
+      await h.page.waitForTimeout(900)
+      g = await inspect(h.page, LONG)
+      console.log(`${theme}: ${JSON.stringify(g)}`)
+      assert(`${theme}: no pinned card while the tall bubble is mostly on screen (card: ${JSON.stringify(g.card?.text ?? null)})`, g.card == null)
+      assert(`${theme}: long prompt row is on screen as itself, not the stand-in`, g.rowHidden === false && g.rowStandin === false)
+      assert(`${theme}: the row's own strip is visible on hover (computed ${g.strip?.visibility}, opacity ${g.strip?.opacity})`,
         g.strip?.visibility === 'visible' && g.strip?.opacity === '1')
       assert(`${theme}: pin control is visible (computed ${g.pin?.visibility})`, g.pin?.visibility === 'visible')
-      assert(`${theme}: Edit is dropped while standing in (computed display ${g.edit?.display})`, g.edit?.display === 'none')
-      assert(`${theme}: card bottom (${Math.round(g.card?.bottom ?? 0)}) does not cover the strip top (${Math.round(g.strip?.top ?? 0)})`,
-        !!g.card && !!g.strip && g.card.bottom <= g.strip.top + 0.5)
+      assert(`${theme}: Edit is present while the row is not standing in (computed display ${g.edit?.display})`, !!g.edit && g.edit.display !== 'none')
       assert(`${theme}: Copy is the element under its own centre (hit-testable)`, g.copy?.hit === true)
     } else {
-      assert(`${theme}: [defect] strip is hidden with the row (computed ${g.strip?.visibility})`, g.strip?.visibility === 'hidden')
-      assert(`${theme}: [defect] Copy is not hit-testable`, g.copy?.hit === false)
+      console.log(`${theme}: ${JSON.stringify(g)}`)
+      assert(`${theme}: [folding build] row is already the hidden stand-in`, g.rowHidden === true)
+      assert(`${theme}: [folding build] a card taller than one line stands in (${Math.round(g.card?.height ?? 0)}px)`, !!g.card && g.card.height > 80)
     }
-    await shot(`${EXPECTED}-01-pinned-long-prompt-${theme}`)
-    // Zoom on the seam: the card's bottom edge and the strip beneath it.
+    await shot(`${EXPECTED}-01-tall-prompt-on-screen-${theme}`)
+    // Zoom on the seam: the bubble's bottom edge and the strip beneath it.
     const seamTop = Math.max(0, Math.round((g.bubble?.bottom ?? 300) - 220))
-    await shot(`${EXPECTED}-02-strip-under-card-${theme}`, { x: 0, y: seamTop, width: g.viewport.w, height: 320 })
+    await shot(`${EXPECTED}-02-strip-under-bubble-${theme}`, { x: 0, y: seamTop, width: g.viewport.w, height: 320 })
     if (EXPECTED === 'after' && theme === 'dark') {
-      // The click must land on the row's button, not on the card overlay. Either
-      // outcome label proves the click reached it; the clipboard grant is what
-      // lets the successful one show.
+      // The click lands on the row's own button; there is no card overlay to
+      // intercept it. Either outcome label proves the click reached it; the
+      // clipboard grant is what lets the successful one show.
       await h.page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: h.base })
       await rowLocator(LONG).locator('button[title="Copy"]').click({ timeout: 5000 })
       await h.page.waitForTimeout(250)
       const after = await inspect(h.page, LONG)
       assert(`dark: Copy click landed (label now "${after.copy?.label}")`, /copied|copy failed/i.test(after.copy?.label || ''))
       await shot(`${EXPECTED}-03-copy-clicked-${theme}`, { x: 0, y: seamTop, width: g.viewport.w, height: 320 })
-      // Card at its clamp, strip still uncovered: scroll on until the long prompt's
-      // bubble bottom sits 40px under the fold. The card has reached its 48px rest,
-      // but the 28px strip (4px under the bubble) still pokes out below the card's
-      // bottom, so it must stay shown — hiding it here is the abrupt vanish and
-      // blank band the occlusion rule exists to remove.
+      await h.page.mouse.move(5, 5)
+      // One line left: scroll on until the long prompt's bubble bottom sits 40px
+      // under the fold. Less than the resting line of the bubble is above the
+      // reply now, so the one-line card takes over and the row hides — but the
+      // 28px strip (4px under the bubble) still pokes out below the card's
+      // bottom, so it must stay shown and uncovered — hiding it here is the
+      // abrupt vanish and blank band the occlusion rule exists to remove.
       await placeBubbleBottomFromFold(h.page, LONG, 40)
       await placeBubbleBottomFromFold(h.page, LONG, 40)
       const clamp = await inspect(h.page, LONG)
-      console.log(`dark at clamp, strip uncovered: ${JSON.stringify({ rowHidden: clamp.rowHidden, marker: clamp.rowStandinValue, copy: clamp.copy, card: clamp.card })}`)
-      assert(`dark: card is at its resting clamp (${Math.round(clamp.card?.height ?? 0)}px)`, !!clamp.card && clamp.card.height < 80)
+      console.log(`dark one line left, strip uncovered: ${JSON.stringify({ rowHidden: clamp.rowHidden, marker: clamp.rowStandinValue, copy: clamp.copy, card: clamp.card, strip: clamp.strip })}`)
+      assert('dark: long prompt row is the pinned stand-in (hidden by visibility)', clamp.rowHidden === true)
+      assert(`dark: the one-line card is mounted at its resting height (${Math.round(clamp.card?.height ?? 0)}px)`, !!clamp.card && clamp.card.height < 80)
       assert(`dark: strip still uncovered keeps the marker (value ${JSON.stringify(clamp.rowStandinValue)})`, clamp.rowStandinValue === 'folding')
       assert(`dark: strip still uncovered stays visible (computed ${clamp.copy?.visibility})`, clamp.copy?.visibility === 'visible')
-      assert(`dark: strip bottom (${Math.round(clamp.copy?.bottom ?? 0)}) is below the card bottom (${Math.round(clamp.card?.bottom ?? 0)})`, (clamp.copy?.bottom ?? 0) > (clamp.card?.bottom ?? 0))
-      await shot(`${EXPECTED}-08-card-at-clamp-strip-uncovered-${theme}`, { x: 0, y: Math.max(0, Math.round((clamp.card?.top ?? 60) - 30)), width: clamp.viewport.w, height: 200 })
+      assert(`dark: card bottom (${Math.round(clamp.card?.bottom ?? 0)}) does not cover the strip bottom (${Math.round(clamp.strip?.bottom ?? 0)})`,
+        !!clamp.card && !!clamp.strip && clamp.strip.bottom > clamp.card.bottom + 0.5)
+      assert(`dark: Edit is dropped while standing in (computed display ${clamp.edit?.display})`, clamp.edit?.display === 'none')
+      assert('dark: Copy under the card is hit-testable', clamp.copy?.hit === true)
+      await shot(`${EXPECTED}-08-one-line-card-strip-uncovered-${theme}`, { x: 0, y: Math.max(0, Math.round((clamp.card?.top ?? 60) - 30)), width: clamp.viewport.w, height: 200 })
       // Fully at rest: the strip's bottom has passed the card's resting bottom.
       // A visible strip there is one nobody can see but Tab still stops on, so it
       // must go back to hidden.
@@ -395,9 +412,10 @@ async function main() {
       assert('dark: unpinned prompt row is not hidden', un.rowHidden === false && un.rowStandin === false)
       assert(`dark: unpinned strip shows Edit (computed display ${un.edit?.display})`, !!un.edit && un.edit.display !== 'none')
       await shot(`${EXPECTED}-04-unpinned-strip-with-edit-${theme}`, { x: 0, y: Math.max(0, Math.round(un.row.top - 40)), width: un.viewport.w, height: Math.min(un.viewport.h, Math.round(un.row.height + 80)) })
-      // Then pinned: its top 40px past the fold, its bottom still on screen.
-      await placeRowTopFromFold(h.page, MEDIUM, -40)
-      await placeRowTopFromFold(h.page, MEDIUM, -40)
+      // Then pinned: its bubble's bottom 40px under the fold, so only its last
+      // line is left above the reply and the one-line card stands in for it.
+      await placeBubbleBottomFromFold(h.page, MEDIUM, 40)
+      await placeBubbleBottomFromFold(h.page, MEDIUM, 40)
       const pinned = await inspect(h.page, MEDIUM)
       console.log(`dark pinned medium: ${JSON.stringify({ rowHidden: pinned.rowHidden, edit: pinned.edit, pin: pinned.pin, card: pinned.card, strip: pinned.strip })}`)
       assert('dark: medium prompt row is the pinned stand-in', pinned.rowHidden && pinned.rowStandin)
@@ -406,19 +424,28 @@ async function main() {
       const top = Math.max(0, Math.round((pinned.card?.top ?? 60) - 30))
       await shot(`${EXPECTED}-05-pinned-strip-without-edit-${theme}`, { x: 0, y: top, width: pinned.viewport.w, height: Math.min(pinned.viewport.h - top, Math.round((pinned.strip?.bottom ?? 300) - top + 60)) })
 
-      // A pinned STEER at hand-off: the accent bubble starts under its badge, so
-      // the stand-in height is measured from the row top and the card's bottom
-      // must land on the bubble's bottom, with the strip right beneath.
+      // A STEER: badge above an accent bubble, measured through the same
+      // `.message-bubble` hook. With its row top just past the fold the whole
+      // accent bubble is still above the reply, so no card stands in yet; once
+      // only its last line remains the one-line card takes over, with the strip
+      // right beneath.
       await placeRowTopFromFold(h.page, STEER, -2)
       await placeRowTopFromFold(h.page, STEER, -2)
+      const steerTopPast = await inspect(h.page, STEER)
+      console.log(`dark steer top past the fold: ${JSON.stringify({ rowHidden: steerTopPast.rowHidden, marker: steerTopPast.rowStandinValue, bubble: steerTopPast.bubble, card: steerTopPast.card })}`)
+      assert(`dark: steer with its bubble still on screen shows no card (card: ${JSON.stringify(steerTopPast.card?.text ?? null)})`, steerTopPast.card == null)
+      assert('dark: steer row is on screen as itself, not the stand-in', steerTopPast.rowHidden === false && steerTopPast.rowStandin === false)
+      await placeBubbleBottomFromFold(h.page, STEER, 40)
+      await placeBubbleBottomFromFold(h.page, STEER, 40)
       const steer = await inspect(h.page, STEER)
       console.log(`dark pinned steer: ${JSON.stringify({ rowHidden: steer.rowHidden, marker: steer.rowStandinValue, bubble: steer.bubble, card: steer.card, strip: steer.strip })}`)
       assert('dark: steer row is the pinned stand-in', steer.rowHidden && steer.rowStandinValue === 'folding')
-      assert(`dark: steer card bottom (${Math.round(steer.card?.bottom ?? 0)}) meets the bubble bottom (${Math.round(steer.bubble?.bottom ?? 0)})`,
-        !!steer.card && !!steer.bubble && Math.abs(steer.card.bottom - steer.bubble.bottom) <= 1)
+      assert(`dark: steer card is one line (${Math.round(steer.card?.height ?? 0)}px)`, !!steer.card && steer.card.height < 80)
       assert(`dark: steer strip visible under the card (computed ${steer.strip?.visibility})`, steer.strip?.visibility === 'visible')
+      assert(`dark: steer strip bottom (${Math.round(steer.strip?.bottom ?? 0)}) is below the card bottom (${Math.round(steer.card?.bottom ?? 0)})`,
+        !!steer.card && !!steer.strip && steer.strip.bottom > steer.card.bottom + 0.5)
       const steerTop = Math.max(0, Math.round((steer.card?.top ?? 60) - 30))
-      await shot(`${EXPECTED}-06-pinned-steer-handoff-${theme}`, { x: 0, y: steerTop, width: steer.viewport.w, height: Math.min(steer.viewport.h - steerTop, Math.round((steer.strip?.bottom ?? 300) - steerTop + 60)) })
+      await shot(`${EXPECTED}-06-pinned-steer-one-line-${theme}`, { x: 0, y: steerTop, width: steer.viewport.w, height: Math.min(steer.viewport.h - steerTop, Math.round((steer.strip?.bottom ?? 300) - steerTop + 60)) })
 
       // An editing row never pins: open Edit on the five-line prompt while it is
       // unpinned, then scroll its top past the fold — no card, editor still shown.

@@ -5664,7 +5664,6 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
                   images={pinned.images}
                   bodyBeyondPreview={pinned.bodyBeyondPreview}
                   pushUp={pinned.push}
-                  liveH={pinned.liveH}
                   maxH={pinned.maxH}
                   bannerH={pinned.bannerH}
                   expanded={pinExpanded}
@@ -5816,11 +5815,12 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
                 // (identity rule below): hide the row and mark it for index.css. The
                 // marker reads `folding` while the hook reports the row's re-shown
                 // action strip still UNCOVERED — some of it below the card's resting
-                // bottom, on screen. That is the whole fold and the strip's own
-                // height of scroll after it: the card rests at its clamp while the
-                // strip, hanging under the bubble, is still sliding under it, so a
-                // marker keyed on the fold alone dropped the strip out from under
-                // the pointer for that last stretch. Once the strip is under the card
+                // bottom, on screen. The card takes over with the bubble's last line
+                // still above the reply, and the strip hangs under that line, so it
+                // is wholly on screen at that frame and slides under the card over
+                // the next strip's-height of scroll; a marker that dropped at the
+                // hand-off left the strip vanishing out from under the pointer for
+                // that last stretch. Once the strip is under the card
                 // or behind the header the marker is empty and the strip hides with
                 // its row again, or Tab would stop on controls nobody can see.
                 const pinnedStandin = !!(pinned && (pinned.ts != null
@@ -5834,10 +5834,10 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
                   // them as two containers. Hide the real one (visibility, NOT
                   // display — the virtualizer must keep measuring its height or
                   // the transcript would reflow under the reader) and the bubble
-                  // appears to simply stop travelling and stick. The row hides the
-                  // moment its top crosses the fold (the top-edge hand-off), and
-                  // the card then folds down the BUBBLE's remaining height, so the
-                  // row's action strip beneath the bubble is never behind the card
+                  // appears to simply stop travelling and stick. The row hides
+                  // once only its BUBBLE's last line remains above the reply (the
+                  // one-line hand-off, see usePinnedPrompt), so the row's action
+                  // strip beneath the bubble is still below the card at that frame
                   // — `data-pinned-standin` lets index.css re-show that strip
                   // (visibility is inherited, so a `visible` descendant of a hidden
                   // row is drawn and clickable). Without it a prompt taller than

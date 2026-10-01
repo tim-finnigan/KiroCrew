@@ -5,8 +5,8 @@ import PinnedPrompt from '../pages/chat/PinnedPrompt'
 // The card is an overlay that paints above the composer dock, so its only bound is
 // the `maxH` ceiling the host measures (usePinnedPrompt.test.tsx covers the
 // measurement). This file pins the card's half of the contract: the ceiling lands
-// on the box as `max-height` — which outranks the fold's and the morph's inline
-// `height` by CSS rule — and the box's layout lets the ceiling SHRINK the prompt's
+// on the box as `max-height` — which outranks the morph's inline `height` by CSS
+// rule — and the box's layout lets the ceiling SHRINK the prompt's
 // scroll region rather than merely clip it. jsdom lays nothing out, so what can be
 // asserted is the structure that makes the browser do the right thing: `max-height`
 // on the box, `items-stretch` on it (a single-line flex container clamps its line to
@@ -51,14 +51,6 @@ describe('PinnedPrompt — the host ceiling caps the card', () => {
   it('leaves the box unbounded when the host has measured no floor', () => {
     const { box } = renderCard()
     expect(box.style.maxHeight).toBe('')
-  })
-
-  it('caps the fold too: an inline fold height past the ceiling is still under max-height', () => {
-    // The fold writes `height` imperatively; `max-height` wins by CSS rule, so the
-    // box carries both and the browser resolves them in the ceiling's favour.
-    const { box } = renderCard({ maxH: 296, liveH: 816 })
-    expect(box.style.height).toBe('816px')
-    expect(box.style.maxHeight).toBe('296px')
   })
 
   it('lays the box out so the ceiling shrinks the scroll region instead of clipping it', () => {

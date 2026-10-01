@@ -9,7 +9,6 @@ import {
   pinnedImageUrl,
   pinHandoffY,
   pinPushTravel,
-  computeLiveCardH,
   computePinnedCardMaxH,
   ROW_PAD_Y,
   DEFAULT_PINNED_CARD_H,
@@ -387,55 +386,6 @@ describe('preview line counts', () => {
   })
 })
 
-describe('computeLiveCardH', () => {
-  const RESTING = 48, BUBBLE = 856, PAD = ROW_PAD_Y
-
-  it('is the bubble height at the hand-off, so the card is a pixel-exact stand-in', () => {
-    // At hand-off the row top is ON the fold, so the bubble's bottom is PAD + bubble below.
-    expect(computeLiveCardH(PAD + BUBBLE, RESTING, BUBBLE)).toBe(BUBBLE)
-  })
-
-  it('tracks the bubble bottom, so no gap can open between the card and what follows it', () => {
-    // The gap this removes: with a fixed 48px card and this 856px bubble, the reply sat
-    // 794px below the card in a 700px viewport until the reader scrolled it closed. The
-    // edge tracked is the BUBBLE's, not the row's: the row's action strip sits below the
-    // bubble and is re-shown under the hidden row, so a card reaching the row's bottom
-    // would cover it.
-    for (const scrolled of [0, 100, 400, 700]) {
-      const bubbleBottom = PAD + BUBBLE - scrolled
-      const h = computeLiveCardH(bubbleBottom, RESTING, BUBBLE)
-      // card bottom === bubble bottom === where the action strip, then the reply, begin
-      expect(PAD + h).toBe(bubbleBottom)
-    }
-  })
-
-  it('stops at the resting height and never goes under it', () => {
-    expect(computeLiveCardH(PAD + RESTING, RESTING, BUBBLE)).toBe(RESTING)
-    expect(computeLiveCardH(PAD + 10, RESTING, BUBBLE)).toBe(RESTING)
-    expect(computeLiveCardH(-500, RESTING, BUBBLE)).toBe(RESTING)
-  })
-
-  it('never exceeds the bubble, so a fresh pin cannot push the reply down', () => {
-    expect(computeLiveCardH(PAD + BUBBLE + 300, RESTING, BUBBLE)).toBe(BUBBLE)
-  })
-
-  it('leaves a bubble smaller than the clamp alone', () => {
-    // A one-word prompt is already shorter than the clamped card; the resting floor
-    // must not stretch the card past the bubble it is copying.
-    expect(computeLiveCardH(PAD + 30, RESTING, 30)).toBe(RESTING)
-    expect(computeLiveCardH(PAD + 30, RESTING, 30)).toBeLessThanOrEqual(RESTING)
-  })
-
-  it('is monotone in the bubble bottom, so a fold never reverses mid-scroll', () => {
-    let prev = -Infinity
-    for (let bubbleBottom = 0; bubbleBottom <= PAD + BUBBLE; bubbleBottom += 17) {
-      const h = computeLiveCardH(bubbleBottom, RESTING, BUBBLE)
-      expect(h).toBeGreaterThanOrEqual(prev)
-      prev = h
-    }
-  })
-})
-
 describe('computePinnedCardMaxH', () => {
   // The card's top is ROW_PAD_Y under the fold; the floor is the scroller's bottom less
   // its bottom padding (the host's own clearance for the composer dock). The card may
@@ -443,14 +393,6 @@ describe('computePinnedCardMaxH', () => {
   // the input box, which is the bug this ceiling exists to close.
   it('is the distance from the card top to the floor', () => {
     expect(computePinnedCardMaxH(100, 400)).toBe(400 - 100 - ROW_PAD_Y)
-  })
-
-  it('is a ceiling the fold respects: a bubble below the floor folds to the floor instead', () => {
-    const foldY = 100, floorY = 400, RESTING = 48
-    const wanted = computeLiveCardH(ROW_PAD_Y + 856, RESTING, 856)
-    const capped = Math.min(computePinnedCardMaxH(foldY, floorY), wanted)
-    // card bottom === floor, not the bubble's bottom 460px under it
-    expect(foldY + ROW_PAD_Y + capped).toBe(floorY)
   })
 
   it('never goes negative when the fold itself is below the floor', () => {

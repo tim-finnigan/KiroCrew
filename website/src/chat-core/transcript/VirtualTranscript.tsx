@@ -111,9 +111,10 @@ export interface VirtualTranscriptProps {
   /** The hidden row's action strip is still uncovered — on screen below the
    *  card standing in for the row's bubble. Written as the `folding` value of
    *  the row's `data-pinned-standin` marker — what index.css keys the row's
-   *  re-shown action strip on. Not "the fold is in progress": the card reaches
-   *  its clamp while the strip, hanging under the bubble, is still sliding under
-   *  it, and the strip has to stay shown until it has. A sibling flag rather
+   *  re-shown action strip on. `folding` here means "uncovered": the card takes
+   *  over with the strip, hanging under the bubble's last line, still wholly
+   *  below it, and the strip slides under over the next strip's-height of
+   *  scroll, so it has to stay shown until it has. A sibling flag rather
    *  than a richer `isRowHidden` answer: at most one row is hidden, so this is a
    *  property of the pin, not of a row. */
   hiddenRowStripUncovered?: boolean

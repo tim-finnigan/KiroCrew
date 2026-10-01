@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import PinnedPrompt from '../pages/chat/PinnedPrompt'
 
 // The pinned card lives in a `pointer-events-none` overlay that is a SIBLING of the
@@ -9,15 +9,14 @@ import PinnedPrompt from '../pages/chat/PinnedPrompt'
 // wheel over such a box left the sibling scroller's scrollTop at 0 while the same
 // wheel over bare scroller moved it 400px.
 //
-// Going inert dodges that and costs too much. While the fold holds the card over
-// lines the reader has not finished, an inert card cannot be selected, copied or
-// clicked, and its jump and expand buttons keep their hover styling while doing
-// nothing. So the card STAYS interactive and forwards the gesture instead.
+// Going inert dodges that and costs too much: an inert card cannot be selected,
+// copied or clicked, and its jump and expand buttons keep their hover styling while
+// doing nothing. So the card STAYS interactive and forwards the gesture instead.
 //
 // jsdom does not scroll, so what these assert is the delta reaching the host and the
 // default being prevented — the two things the forwarder is responsible for. That the
-// host's `scrollTop +=` then moves the transcript is the browser's job, measured by
-// the probe above.
+// host's `scrollTop +=` then moves the transcript is the browser's job, measured in
+// the browser as described above.
 function renderCard(over: Partial<Parameters<typeof PinnedPrompt>[0]> = {}) {
   const scrollTranscriptBy = vi.fn()
   render(
@@ -69,29 +68,30 @@ function touch(box: Element, type: string, clientY: number) {
 }
 
 describe('PinnedPrompt — the card stays interactive and forwards the scroll', () => {
-  it('keeps pointer events at its resting height', () => {
+  it('keeps pointer events', () => {
     const { card } = renderCard()
     expect(card.className).toContain('pointer-events-auto')
     expect(card.className).not.toContain('pointer-events-none')
   })
 
-  it('keeps pointer events while the fold holds it grown', () => {
-    const { card } = renderCard({ liveH: 816 })
-    expect(card.className).toContain('pointer-events-auto')
-    expect(card.className).not.toContain('pointer-events-none')
-  })
-
   it('forwards a wheel delta to the transcript instead of swallowing it', () => {
-    const { box, scrollTranscriptBy } = renderCard({ liveH: 816 })
+    const { box, scrollTranscriptBy } = renderCard()
     const e = wheel(box, 120)
     expect(scrollTranscriptBy).toHaveBeenCalledWith(120)
     expect(e.defaultPrevented).toBe(true)
   })
 
-  it('forwards at the resting height too, where the band would also swallow', () => {
-    const { box, scrollTranscriptBy } = renderCard()
-    wheel(box, 40)
-    expect(scrollTranscriptBy).toHaveBeenCalledWith(40)
+  it('jumps to the prompt when its text is clicked', () => {
+    // The prompt text is the jump button. The card is one line, so the button is a
+    // small deliberate target rather than a stretch of ordinary-looking text.
+    const onJump = vi.fn()
+    const { box } = renderCard({ onJump })
+    const button = box.querySelector('p')?.closest('button')
+    if (!button) throw new Error('paragraph is not inside a button')
+    fireEvent.click(button)
+    expect(onJump).toHaveBeenCalledTimes(1)
+    expect(button.className).toContain('cursor-pointer')
+    expect(button.getAttribute('aria-disabled')).toBeNull()
   })
 
   it('converts a line-mode delta rather than treating lines as pixels', () => {
@@ -110,7 +110,7 @@ describe('PinnedPrompt — the card stays interactive and forwards the scroll', 
   })
 
   it('forwards a one-finger drag as the distance since the last move, inverted', () => {
-    const { box, scrollTranscriptBy } = renderCard({ liveH: 816 })
+    const { box, scrollTranscriptBy } = renderCard()
     touch(box, 'touchstart', 500)
     touch(box, 'touchmove', 460)
     expect(scrollTranscriptBy).toHaveBeenCalledWith(40)
@@ -130,7 +130,7 @@ describe('PinnedPrompt — the card stays interactive and forwards the scroll', 
 
 describe('PinnedPrompt — the browser zoom gesture is not taken', () => {
   it('lets ctrl+wheel through instead of scrolling the transcript', () => {
-    const { box, scrollTranscriptBy } = renderCard({ liveH: 816 })
+    const { box, scrollTranscriptBy } = renderCard()
     const e = zoomWheel(box, 120)
     // Zoom is a low-vision path. Taking it would make the card the one place on the
     // page that cannot be zoomed.
@@ -139,7 +139,7 @@ describe('PinnedPrompt — the browser zoom gesture is not taken', () => {
   })
 
   it('still forwards a plain wheel, so the zoom exemption is not a hole', () => {
-    const { box, scrollTranscriptBy } = renderCard({ liveH: 816 })
+    const { box, scrollTranscriptBy } = renderCard()
     wheel(box, 120)
     expect(scrollTranscriptBy).toHaveBeenCalledWith(120)
   })
@@ -170,7 +170,7 @@ function wheelOn(target: Element, deltaY: number) {
 
 describe('PinnedPrompt — the forwarder yields to the card own scroll region', () => {
   function expandedCard() {
-    const r = renderCard({ expanded: true, liveH: undefined })
+    const r = renderCard({ expanded: true })
     const p = r.card.querySelector('p')
     if (!p) throw new Error('pinned card rendered no paragraph')
     return { ...r, p }
@@ -199,12 +199,12 @@ describe('PinnedPrompt — the forwarder yields to the card own scroll region', 
     expect(scrollTranscriptBy).toHaveBeenCalledWith(-120)
   })
 
-  it('still forwards everything while folding, where the text is overflow-hidden', () => {
-    const { card, scrollTranscriptBy } = renderCard({ liveH: 816 })
+  it('still forwards everything while collapsed, where the text is overflow-hidden', () => {
+    const { card, scrollTranscriptBy } = renderCard()
     const p = card.querySelector('p')
     if (!p) throw new Error('pinned card rendered no paragraph')
-    // Tall content, but the fold clips rather than scrolls, so the region cannot
-    // consume the gesture and the transcript must still move.
+    // Tall content, but the one-line clamp clips rather than scrolls, so the region
+    // cannot consume the gesture and the transcript must still move.
     makeScrollable(p, { scrollTop: 100 })
     ;(p as HTMLElement).style.overflowY = 'hidden'
     wheelOn(p, 120)
