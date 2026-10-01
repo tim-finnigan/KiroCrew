@@ -1649,7 +1649,7 @@ export default function App() {
     <div
       ref={shellRef}
       data-testid="dashboard-shell"
-      className={`relative z-[1] h-full grid ${shellEntered ? '' : 'animate-rise'} overflow-hidden bg-bg p-safe ${isMacElectron ? `mac-electron ${macFullscreen ? 'mac-fullscreen' : ''}` : ''} ${isWinElectron ? 'win-electron' : ''} ${isLinuxFramelessElectron ? 'linux-electron' : ''} ${isMobile ? 'grid-cols-[minmax(0,1fr)] grid-rows-[42px_minmax(0,1fr)]' : bottomDock ? 'grid-rows-[42px_minmax(0,1fr)_auto]' : 'grid-rows-[42px_minmax(0,1fr)]'}`}
+      className={`relative z-[1] h-full grid ${isMobile ? 'mobile-chrome' : !focusActive ? 'grabber-shell' : ''} ${shellEntered ? '' : 'animate-rise'} overflow-hidden bg-bg p-safe ${isMacElectron ? `mac-electron ${macFullscreen ? 'mac-fullscreen' : ''}` : ''} ${isWinElectron ? 'win-electron' : ''} ${isLinuxFramelessElectron ? 'linux-electron' : ''} ${isMobile ? 'grid-cols-[minmax(0,1fr)] grid-rows-[42px_minmax(0,1fr)]' : bottomDock ? 'grid-rows-[42px_minmax(0,1fr)_auto]' : 'grid-rows-[42px_minmax(0,1fr)]'}`}
       // Retire the entrance animation once it has played, so re-showing this
       // pane cannot replay it. Guarded on BOTH the keyframe name and the event
       // target: `animationend` bubbles, and descendants (banners, cards) use
@@ -2590,7 +2590,8 @@ export default function App() {
         ) : (
           <nav
             ref={railPeekSurface}
-            className="focus-chrome-rail bg-bg-elevated border border-border rounded-xl flex flex-col mx-2 mt-0 mb-2 shadow-sm z-50 overflow-hidden"
+            data-compact={effectiveCollapsed ? 'true' : 'false'}
+            className="focus-chrome-rail dashboard-navigation flex flex-col mx-2 mt-0 mb-2 z-50 overflow-hidden"
             // Focus mode: same overlay treatment as the header. The rail's own
             // `mx-2` means translateX(-100%) would leave its 8px left margin
             // showing as a sliver, hence the extra 12px of travel. Width has to
@@ -2622,7 +2623,7 @@ export default function App() {
 
       {/* Content */}
       <div
-        className="flex flex-col min-h-0 min-w-0"
+        className="dashboard-surface flex flex-col min-h-0 min-w-0"
         // Focus mode reclaims the 236px rail column, which leaves everything in
         // this column — the chat sessions drawer first — flush against the
         // window's left edge, while the same surfaces stay inset 8px at the

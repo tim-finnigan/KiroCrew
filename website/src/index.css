@@ -2258,6 +2258,43 @@ file-tree-container{
   backface-visibility:hidden;
   transition:background-color .25s ease}
 
+/* ── Dashboard chrome ──
+   The nav rail and top bar form one continuous `--chrome` surface, with the
+   real page inset to its right as a bordered, top-rounded panel. Mobile drawers
+   and focus overlays keep their own frame. Ported from feat/grabber-dashboard-layout. */
+.grabber-shell{background:var(--chrome);color:var(--text)}
+.grabber-shell > header.topbar-glass{background:var(--chrome);color:var(--text);box-shadow:none}
+.grabber-shell > .dashboard-surface{border-top:1px solid var(--border);border-left:1px solid var(--border);border-right:1px solid var(--border);border-radius:8px 8px 0 0;margin-right:6px;overflow:hidden;background:var(--bg);color:var(--text)}
+.grabber-shell .dashboard-navigation{background:var(--chrome);color:var(--text)}
+.dashboard-navigation .nav-item{height:42px;padding:3px 11px;gap:10px;flex-shrink:0}
+.dashboard-navigation .nav-item > .nav-icon-frame > .app-icon-nav{width:36px;height:36px;border-radius:8px}
+.dashboard-navigation .nav-item > .nav-icon-frame > .app-icon-nav > svg{width:20px;height:20px}
+/* Selection belongs to the icon tile, never a rail-wide saturated slab. The
+   shell selector intentionally outranks each theme's generic .nav-active. */
+.dashboard-navigation .nav-item.nav-active{background:transparent;color:var(--text);filter:none}
+.dashboard-navigation .nav-item.nav-active > .nav-icon-frame > .app-icon-nav{background:var(--accent-subtle);color:var(--accent)}
+.dashboard-navigation .nav-item:hover{background:transparent}
+/* Hover answers immediately on the compact tile, independently of the label
+   delay. A neutral inset edge remains visible in low-contrast light palettes;
+   selected tiles keep their accent fill. Neither cue changes geometry. */
+.dashboard-navigation .nav-item:hover > .nav-icon-frame > .app-icon-nav{opacity:1;box-shadow:inset 0 0 0 1px var(--border-strong)}
+.dashboard-navigation .nav-item:not(.nav-active):hover > .nav-icon-frame > .app-icon-nav{background:var(--bg-hover)}
+.dashboard-navigation[data-compact="true"] .nav-item{justify-content:flex-start}
+.dashboard-navigation[data-compact="true"] .nav-section{overflow:hidden}
+.dashboard-navigation .nav-item > span:not(.app-icon-nav){min-width:0}
+.grabber-shell .session-list-drawer{padding-bottom:0}
+.grabber-shell .session-list-drawer .sidebar-inner{border-top:0;border-bottom:0;border-left:0;border-radius:0;box-shadow:none}
+@media(prefers-reduced-motion:reduce){
+  .grabber-shell{transition:none!important}
+}
+
+/* Phones keep all reading width: continuous chrome and one top divider, but
+   no desktop gutter or persistent rail. */
+.mobile-chrome{background:var(--chrome);color:var(--text)}
+.mobile-chrome > header.topbar-glass{background:var(--chrome);color:var(--text);box-shadow:none}
+.mobile-chrome > .dashboard-surface{border-top:1px solid var(--border);border-radius:8px 8px 0 0;overflow:hidden;background:var(--bg);color:var(--text)}
+.mobile-navigation-rail .nav-item.nav-active{background:transparent;color:var(--text);filter:none}
+
 /* ── Frameless Electron window (macOS) ──
    The SPA header row doubles as the title bar; the native traffic lights are
    inset at the window's top-left (electron/main.js trafficLightPositionForZoom),
