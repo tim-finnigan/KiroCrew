@@ -967,14 +967,32 @@ rebuild it needed. And the memo advances **only after a confirmed write**: the h
 evaluation that gates the write. A failure still raises through the hook runner, which logs
 and moves on — and a **refused** rebuild (an instance the shared-home write guard declines:
 non-default `KIROCREW_HOME`, pod, or foreign-pinned specs) returns `wrote=False` and holds the
-memo the same way, logging the pending projection at WARNING once per generation. Either way,
+memo the same way, logging the pending projection at WARNING once per generation. So does a
+rebuild in which a conductor installer **left its spec on disk unwritten** — because the file
+could not be read for a reason that may clear on retry (`conductor_agents._governed_grants`),
+or because the installer's write raised and the rebuild logged it rather than propagating it:
+that spec's `allowedTools` were not re-derived either, so the installers report whether they
+wrote and the rebuild reports the hold through its private `_held_out` out-parameter, which
+the hook reads beside `wrote`. The hold is deliberately NOT folded into `wrote=False`:
+`kirocrew.json` was written, and the dashboard's default-model applier reads `wrote=False` as
+a change that did not land — a held conductor spec would otherwise announce every model
+change as failed and retry it forever. Either way,
 marking the generation synchronised would lose the retry the next poll gives and leave
 forbidden auto-approvals on disk for the process lifetime; holding the memo means every later
 poll retries and the projection lands the moment the failure or refusal clears. The verdict
 comes from inside the rebuild itself, never a separate guard probe, which would race a
 concurrent default-home rewrite and record a projection that never landed. An unseeded
 baseline rebuilds once rather than skipping — a redundant rewrite costs a file write, a
-skipped one costs the tighten.
+skipped one costs the tighten. Boot is the one place the hold would otherwise be lost: the
+boot rebuild is a bare `rebuild_agent_config()`, and `prime_ceiling_projection` runs after
+it, so a conductor spec that rebuild left unwritten still carries the list the *previous*
+ceiling wrote while a seeded baseline would say the current generation is projected — and
+the hook, skipping an unchanged generation, would never retry it for the process lifetime.
+The rebuild therefore records its installers' verdict in a module memo
+(`agent._conductor_spec_held`, the last rebuild's `_held_out` kept for the one reader that
+did not run it), and `prime_ceiling_projection` **seeds nothing while it is set**, logging
+once at WARNING: the first poll rebuilds against the unseeded baseline, reports its own hold,
+and the memo advances only once every spec is rewritten.
 
 A builtin can also be governed by a **capability** rather than by its name:
 `BUILTIN_TOOL_CAPABILITIES` maps `use_subagent` to `capabilities.spawn`. A capability is not
