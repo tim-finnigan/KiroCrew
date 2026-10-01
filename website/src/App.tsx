@@ -2294,6 +2294,14 @@ export default function App() {
             The sidebar toggle lives HERE (menu row), not in the topbar. */}
         <div className="shrink-0 flex flex-col gap-0.5 px-2 pt-2">
           <RailBrandToggle effectiveCollapsed={effectiveCollapsed} toggleNav={toggleNav} avatar={avatar} branding={branding} botName={botName} />
+          {/* The current-crew identity switcher sits just under the brand/
+              collapse header: it names the crew on screen and switches crews,
+              without displacing the brand mark or the sidebar collapse control.
+              Rendered only when there is a crew to switch to (InstanceTabBar's
+              navigation variant self-hides to the identity when none exist). */}
+          <div className="mb-1">
+            <InstanceTabBar variant="navigation" collapsed={effectiveCollapsed} />
+          </div>
           {/* Hairline under the expanded header (collapsed rail has none —
               the big logo alone separates well). */}
           {!effectiveCollapsed && <div aria-hidden="true" className="h-px bg-border shrink-0 mb-[7px]" />}
