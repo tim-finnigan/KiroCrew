@@ -67,3 +67,50 @@ export function extractDenyDetail(rowContent: string): string {
   if (!reason) return ''
   return reason.replace(DENY_REASON_MARKER, '').trimStart()
 }
+
+/**
+ * The gateway writes a blocked row as `🚫 <title> — <reason>`; this is the
+ * separator plus the lead word every host-authored refusal that is NOT a
+ * denied-command rule starts with (`hooks.py`: `GATE_CRASH_REASON`, the
+ * sensitive-path and write-protected-config refusals, the deny-by-default
+ * shell message). A WIRE VALUE like `DENY_REASON_MARKER`, held as a regex for
+ * the same reason: translating it would stop the reason from being found.
+ */
+const HOST_NOTICE_MARKER = / — (Blocked: )/g
+
+/**
+ * The suffixes the gateway itself appends to a blocked row that carries NO host
+ * reason (`chat_runner.py`: hook blocked, hook error, rejected, invalid). On such
+ * a row any ` — Blocked: ` text can only have come from the model-authored
+ * title, so it must never be shown as the host's reason.
+ */
+const NON_REASON_ROW_SUFFIX = / \((?:hook blocked|hook error|rejected|invalid: [\s\S]*)\)$/
+
+/**
+ * The host's own refusal sentence for a blocked row that carries NO
+ * `DENY_REASON_MARKER` — the gate-crash refusal above all.
+ *
+ * `extractDenyDetail` yields "" for such a row, and the Output panel then falls
+ * back to its localized "blocked by security policy" line alone. For the
+ * gate-crash row that is exactly backwards: the reason says, in so many words,
+ * that NO policy rule fired and the user did nothing, and the panel tells the
+ * reader a policy rule fired while the sentence that disclaims it never shows.
+ * This returns that sentence so the panel can render it instead of the lead.
+ *
+ * Reads the LAST separator-plus-lead-word, for the same reason
+ * `extractDenyReason` reads the last marker: `<title>` is model-authored, and
+ * the host always appends its reason after it. Yields "" for a marker row
+ * (`extractDenyDetail` owns those) and for a row whose tail is not a host
+ * sentence — a hook-blocked `🚫 <title> (hook blocked)` row keeps the
+ * localized line alone, exactly as before.
+ */
+export function extractDenyNotice(rowContent: string): string {
+  if (!rowContent || extractDenyReason(rowContent)) return ''
+  if (NON_REASON_ROW_SUFFIX.test(rowContent.trimEnd())) return ''
+  let last: RegExpMatchArray | null = null
+  for (const m of rowContent.matchAll(HOST_NOTICE_MARKER)) last = m
+  if (!last || last.index === undefined) return ''
+  const notice = rowContent.slice(last.index + last[0].length - last[1].length).trim()
+  // A lead word with nothing after it is a placeholder, not a reason.
+  return notice === last[1].trim() ? '' : notice
+}
