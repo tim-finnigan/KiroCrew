@@ -1422,7 +1422,7 @@ describe('App routing', () => {
     localStorage.removeItem('mc-nav')
   })
 
-  it('restores the pre-expand rail state when preview expand mode ends untouched', () => {
+  it('keeps the wide rail collapsed after preview expand mode ends (never widens on its own)', () => {
     localStorage.removeItem('mc-nav') // start expanded
     renderWithProviders(<App />, { route: '/chat' })
     const nav = screen.getByRole('navigation', { name: 'Main navigation' })
@@ -1436,8 +1436,11 @@ describe('App routing', () => {
     act(() => {
       window.dispatchEvent(new CustomEvent('kirocrew-preview-expand', { detail: { expanded: false } }))
     })
-    expect(within(nav).getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
-    // The auto-collapse is transient: it never writes the persisted preference.
+    // Wide mode never widens the rail on its own: a preview teardown restores
+    // the COLLAPSED icon rail, not the prior expanded state, so selecting a nav
+    // item can never also widen the rail.
+    expect(within(nav).getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
+    // Still transient: the auto behaviour never writes the persisted preference.
     expect(localStorage.getItem('mc-nav')).toBeNull()
   })
 

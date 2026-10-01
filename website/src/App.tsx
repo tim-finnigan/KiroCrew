@@ -953,12 +953,22 @@ export default function App() {
       }
       const prior = navAutoCollapsed.current
       navAutoCollapsed.current = null
-      if (prior !== null) setNavCollapsed(prior)
+      // Wide (desktop) mode must never widen the rail on its own, so a
+      // preview-expand teardown restores the collapsed icon rail rather than a
+      // prior expanded state (which surfaced as the rail widening when the user
+      // clicked around and a Web Preview tore down). Narrow mode may restore the
+      // prior state as before.
+      if (prior !== null) setNavCollapsed(isMobileRef.current ? prior : true)
     }
     window.addEventListener(PREVIEW_EXPAND_EVENT, onPreviewExpand)
     return () => window.removeEventListener(PREVIEW_EXPAND_EVENT, onPreviewExpand)
   }, [])
   const isMobile = useIsMobile()
+  // Mirror isMobile into a ref so the preview-expand effect (mounted with []
+  // deps, before isMobile is declared) can read the current viewport mode
+  // without re-subscribing.
+  const isMobileRef = useRef(isMobile)
+  isMobileRef.current = isMobile
   const [sidePanelDock] = useSidePanelDock()
   // Side panel docked to the bottom (desktop only) swaps the shell from a
   // 3-column grid with a full-height right rail to a 2-column grid with an
