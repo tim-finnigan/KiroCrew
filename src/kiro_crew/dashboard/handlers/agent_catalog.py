@@ -153,5 +153,9 @@ async def api_agent_catalog(request: web.Request) -> web.Response:
         {
             "agents": rows,
             "default_agent": _roster_mask(config.default_agent) if redact else config.default_agent,
+            # ``dashboard.crewmates_in_agent_picker``: whether the chat picker
+            # may offer the member rows above. The rows are listed either way --
+            # name-only consumers (cron, channel bindings) need every name.
+            "member_choices": bool(config.dashboard.crewmates_in_agent_picker),
         }
     )

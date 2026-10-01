@@ -159,7 +159,7 @@ export function createAgentsEndpoints({ post, put, del, j, sessionKeyHeader: _sk
     agentCatalog: (sessionKey?: string) =>
       fetch('/api/agents/catalog', {
         headers: sessionKey ? { 'X-Session-Key': sessionKey } : { ..._sk },
-      }).then(j) as Promise<{ agents: KiroCrewAgent[]; default_agent: string }>,
+      }).then(j) as Promise<{ agents: KiroCrewAgent[]; default_agent: string; member_choices?: boolean }>,
     createKirocrewAgent: (body: object) => post('/api/agents', body).then(j),
     // Crew Members page — roster of GLOBAL crews with DM-thread binding and the
     // cheap live-status fields the backend can answer without IO (richer live

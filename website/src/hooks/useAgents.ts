@@ -3,16 +3,6 @@ import { api } from '../api/client'
 import type { KiroCrewAgent } from '../components/AgentSelector'
 
 /**
- * TEMPORARY: keep crewmates out of the chat agent pop-up. Only the picker's
- * `choices` list is affected -- the folded `agents` list (cron, channel, project
- * bindings, the keyboard cycle) still sees every name, so a slot already
- * running a member keeps working and nothing is written. Flip to `false` to
- * restore the two-group pop-up; the only other touch is
- * `test/useAgents.hideCrewmates.test.tsx`, which pins the flag on.
- */
-export const HIDE_CREWMATE_CHOICES = true
-
-/**
  * Reads the execution-choice catalog (`GET /api/agents/catalog`): configured
  * members AND installed shared templates, each row tagged `selection_kind`.
  *
@@ -32,11 +22,12 @@ export const HIDE_CREWMATE_CHOICES = true
  *   context (the roster is then global-only and cannot go stale this way).
  *
  * @returns `choices` — the catalog rows a namespace-aware picker (the chat agent
- *   pop-up) renders, keyed by (selection_kind, name). While
- *   `HIDE_CREWMATE_CHOICES` is on, member rows are withheld and the pop-up offers
- *   templates only; a member is still reachable from its DM thread on the Crew
- *   Members page. With the flag off, a member and a template of one name are two
- *   rows here, and picking one sends its kind.
+ *   pop-up) renders, keyed by (selection_kind, name). Unless the catalog says
+ *   `member_choices: true` (the gateway's `dashboard.crewmates_in_agent_picker`
+ *   config), member rows are withheld and the pop-up offers templates only; a
+ *   member is still reachable from its DM thread on the Crew Members page. With
+ *   members shown, a member and a template of one name are two rows here, and
+ *   picking one sends its kind.
  * @returns `agents` — the same catalog folded to ONE row per name for the
  *   name-only consumers (the schedule form's `agent_id`, the channel and project
  *   pages, the keyboard cycle). A member wins the fold because the backend's
@@ -59,6 +50,9 @@ export const HIDE_CREWMATE_CHOICES = true
 export function useAgents(refreshTrigger: number, sessionKey?: string, projectDir?: string) {
   const [choices, setChoices] = useState<KiroCrewAgent[]>([])
   const [defaultAgent, setDefaultAgent] = useState('')
+  // Closed until the catalog says otherwise: a missing or failed read keeps
+  // the templates-only pop-up the gateway ships with.
+  const [memberChoices, setMemberChoices] = useState(false)
   const [error, setError] = useState(false)
   const [reloading, setReloading] = useState(false)
   const [reloadTick, setReloadTick] = useState(0)
@@ -92,6 +86,7 @@ export function useAgents(refreshTrigger: number, sessionKey?: string, projectDi
       if (cancelled) return
       setChoices(d.agents || [])
       setDefaultAgent(d.default_agent || '')
+      setMemberChoices(d.member_choices === true)
       setError(false)
       setReloading(false)
     }).catch(() => {
@@ -112,8 +107,8 @@ export function useAgents(refreshTrigger: number, sessionKey?: string, projectDi
   // Filtered AFTER the fold, so hiding a member from the pop-up never changes
   // which row a bare name resolves to for the name-only consumers.
   const pickerChoices = useMemo(
-    () => (HIDE_CREWMATE_CHOICES ? choices.filter(c => c.selection_kind !== 'member') : choices),
-    [choices],
+    () => (memberChoices ? choices : choices.filter(c => c.selection_kind !== 'member')),
+    [choices, memberChoices],
   )
 
   return { agents, choices: pickerChoices, defaultAgent, error, reload, reloading }

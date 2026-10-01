@@ -2410,6 +2410,17 @@ class DashboardConfig:
             "the next request; no restart.",
         ),
     )
+    crewmates_in_agent_picker: bool = field(
+        default=False,
+        metadata=_meta(
+            "Crewmates in the chat agent picker",
+            "List crewmates in the chat composer's agent picker, beside the agent "
+            "templates, so a chat can be switched onto a crewmate (and its own "
+            "workspace and memory) without opening it from the Crew page. Off by "
+            "default: the picker lists templates only. Takes effect the next time "
+            "the picker loads its list; no restart.",
+        ),
+    )
     qr_session_until_restart: bool = field(
         default=True,
         metadata=_meta(

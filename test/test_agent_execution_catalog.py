@@ -102,6 +102,24 @@ async def test_catalog_keeps_namespaces_and_never_changes_registry(catalog):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_catalog_reports_the_member_choices_flag(catalog, enabled):
+    # The picker shows crewmates only when ``dashboard.crewmates_in_agent_picker``
+    # is on. Member rows stay in the list either way: name-only consumers
+    # (cron, channel bindings) resolve every name from the same catalog.
+    catalog.config.dashboard.crewmates_in_agent_picker = enabled
+    async with TestClient(TestServer(catalog.app)) as client:
+        response = await client.get("/api/agents/catalog")
+        assert response.status == 200
+        result = await response.json()
+    assert result["member_choices"] is enabled
+    assert [row["name"] for row in result["agents"] if row["selection_kind"] == "member"] == [
+        "reviewer",
+        "retained-member",
+    ]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("session_key", [None, "dashboard:ui", "chat-empty"])
 async def test_catalog_never_borrows_another_slots_project(catalog, session_key):
     headers = {"X-Session-Key": session_key} if session_key else {}
@@ -326,3 +344,19 @@ def test_runtime_policy_lookup_preserves_composition_failures(catalog, failure, 
             assert agent_catalog._agent_runtime_policy("reviewer", "review-engine") is None
         assert "Failed to read runtime policy for crew reviewer" in caplog.text
     provider.agent_runtime_policy.assert_called_once_with("review-engine")
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(None, False), (True, True), (False, False), ("yes", False)],
+)
+def test_member_choices_flag_is_read_from_the_config_file(tmp_path, raw, expected):
+    # Hand-edited config is the only door to this flag, so a typo ("yes") must
+    # read as off rather than silently switching the picker.
+    from unittest.mock import patch
+
+    dashboard = {} if raw is None else {"crewmates_in_agent_picker": raw}
+    cfg_file = tmp_path / "config.json"
+    cfg_file.write_text(json.dumps({"dashboard": dashboard}), encoding="utf-8")
+    with patch("kiro_crew.config.loader.config_path", return_value=cfg_file):
+        assert KiroCrewConfig.load().dashboard.crewmates_in_agent_picker is expected
