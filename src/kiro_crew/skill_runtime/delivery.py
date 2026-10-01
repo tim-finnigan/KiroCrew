@@ -1,9 +1,10 @@
 """What reaches the prompt: the skills directory, required bodies and trigger delivery.
 
 ``get_context`` renders the bounded startup directory, or the explicit unbudgeted
-legacy reader. On the budgeted path every ``always: true`` body is charged against
-``PINNED_SKILL_BODIES_CAP``, and one that cannot fit or load raises rather than
-being trimmed.
+legacy reader. On the budgeted path every operator ``always: true`` body is charged
+against ``PINNED_SKILL_BODIES_CAP``, and one that cannot fit or load raises rather
+than being trimmed. A trusted project's ``always: true`` bodies have their own
+budget and are skipped with a warning instead, so a repository cannot fail a session.
 ``split_triggered`` and ``trigger_hint`` decide how a trigger match is
 delivered: a body by default, a one-line pointer for an unconfined skill that
 opted out. Matching itself (``SkillsLoader.get_triggered_skills``) stays in the
@@ -23,6 +24,11 @@ if TYPE_CHECKING:
     from kiro_crew.skills import SkillsLoader
 
 logger = logging.getLogger("kiro_crew.skills")
+
+#: Characters of skipped project ``always: true`` entries (whole notice lines, or
+#: log items) named before the rest are only counted. The keys come from a
+#: checked-out repository, which chooses how many there are.
+_SKIPPED_PROJECT_KEYS_MAX_CHARS = 2000
 
 
 def _namespace_groups(skills: list[dict]) -> list[tuple[str, int]]:
@@ -188,9 +194,11 @@ def get_context(
     """Build a bounded directory over the agent's resolved available set.
 
     Mapping grants availability, not eager body delivery. Ordinary global and
-    confined skills load on demand through scoped search/list/read. Required
-    ``always:true`` bodies share PINNED_SKILL_BODIES_CAP; exceeding it raises
-    SkillContextCapacityError instead of silently dropping instructions.
+    confined skills load on demand through scoped search/list/read. The
+    operator's required ``always:true`` bodies share PINNED_SKILL_BODIES_CAP;
+    exceeding it raises SkillContextCapacityError instead of silently dropping
+    instructions. A project's ``always:true`` bodies use *project_body_budget*
+    (``budget`` when None) and degrade to directory rows with a warning.
 
     ``budget`` bounds optional discovery characters. ``discovery_only`` selects
     the shorter pointer; both variants expose complete paginated discovery.
@@ -254,26 +262,20 @@ def get_context(
     parts: list[str] = []
     pinned_spent = 0
 
-    # Pinned global skills: full content, always injected.
-    # A confined path must never be offered to the agent for a later direct
-    # read, because that read would sit outside the descriptor-pinned gate.
+    # The operator's own pinned skills: full content, always injected, and a
+    # body that cannot be delivered fails the session rather than vanishing.
+    # Confined project rows are excluded here: a checked-out repository must
+    # not be able to fail every session in that project.
     for s in all_skills:
-        if s["key"] not in pinned:
+        if s["key"] not in pinned or s.get("confine_root"):
             continue
         remaining = max(0, sk.PINNED_SKILL_BODIES_CAP - pinned_spent)
-        if s.get("confine_root"):
-            remaining = min(remaining, sk.PROJECT_SKILL_BODY_CAP)
         content = loader.read_scoped_skill(
             str(s["key"]), only=only, project_dir=project_dir, max_bytes=remaining
         )
         if content is None:
-            detail = (
-                f"the {sk.PROJECT_SKILL_BODY_CAP}-byte per-project-skill limit, "
-                if s.get("confine_root")
-                else ""
-            )
             raise sk.SkillContextCapacityError(
-                f"Required skill {s['key']!r} could not be loaded within {detail}"
+                f"Required skill {s['key']!r} could not be loaded within "
                 f"the {sk.PINNED_SKILL_BODIES_CAP}-byte total startup instruction "
                 "capacity, or its file was unreadable. Reduce always:true skills "
                 "or their bodies and verify the file before retrying."
@@ -287,6 +289,50 @@ def get_context(
                 "startup instruction capacity; reduce always:true skills."
             )
         parts.append(rendered)
+
+    # A trusted project's pinned skills ride their own budget, through the same
+    # descriptor-pinned, byte-capped reader as before. A path is never offered for
+    # a later direct read, since that read would sit outside the gate. A body that
+    # does not fit or cannot be read is skipped with a warning, named in a notice
+    # in the required block, and returned to the directory below.
+    project_pinned = [s for s in all_skills if s["key"] in pinned and s.get("confine_root")]
+    project_parts: list[str] = []
+    skipped = loader._append_project_skill_bodies(
+        project_parts,
+        project_pinned,
+        project_dir,
+        project_body_budget if project_body_budget is not None else budget,
+    )
+    pinned -= set(skipped)
+    parts.extend(project_parts)
+    if skipped:
+        # Both lists are bounded: the repository chooses how many rows it ships.
+        # The log always names at least the first key, cut to a readable length.
+        logged = _bounded_prefix([f"{key[:200]!r} ({skipped[key]})" for key in skipped])
+        logger.warning(
+            "%d always: true skill(s) from trusted project %r were not injected: %s%s. "
+            "They stay listed for skill_search. Reduce the project's always: true skills "
+            "or their bodies, or revoke the project-skill trust grant for that project "
+            "to stop loading its skills.",
+            len(skipped),
+            str(project_pinned[0]["confine_root"]),
+            "; ".join(logged),
+            f"; and {len(skipped) - len(logged)} more" if len(skipped) > len(logged) else "",
+        )
+        # In the prompt, not only in the log: the agent has to know a required
+        # instruction is missing. It reads one on demand rather than all of them,
+        # which would spend the context the project budget exists to protect.
+        notice_lines = _bounded_prefix(
+            [f"- skill_search(action='read', key={key!r})" for key in skipped], at_least_one=False
+        )
+        if len(skipped) > len(notice_lines):
+            notice_lines.append(f"- ...and {len(skipped) - len(notice_lines)} more not named here.")
+        parts.append(
+            "### Project skills not injected\n\n"
+            "This project marks these skills always: true, but they did not fit this "
+            "session's project skill budget or could not be read. Read one when its "
+            "topic applies to the task:\n" + "\n".join(notice_lines)
+        )
 
     def wrap(items: list[str]) -> str:
         if not items:
@@ -460,14 +506,31 @@ def _legacy_context(
     return "[Skills:]\n" + "\n\n---\n\n".join(parts) + "\n[End of skills]\n\n"
 
 
+def _bounded_prefix(items: list[str], *, at_least_one: bool = True) -> list[str]:
+    """The leading *items* that fit ``_SKIPPED_PROJECT_KEYS_MAX_CHARS`` together."""
+    kept: list[str] = []
+    used = 0
+    for item in items:
+        used += len(item) + 2
+        if used > _SKIPPED_PROJECT_KEYS_MAX_CHARS and (kept or not at_least_one):
+            break
+        kept.append(item)
+    return kept
+
+
 def _append_project_skill_bodies(
     loader: SkillsLoader,
     parts: list[str],
     project_skills: list[dict],
     project_dir: str | Path | None,
     budget: int | None,
-) -> None:
-    """Append confined bodies without reading beyond the section budget."""
+) -> dict[str, str]:
+    """Append confined bodies without reading beyond the section budget.
+
+    Returns each skill left out, keyed by its catalog key, with the reason.
+    """
+    skipped: dict[str, str] = {}
+    over_budget = f"past the room left in the project skill budget of {budget}"
     wrapper_size = len("[Skills:]\n") + len("\n[End of skills]\n\n")
     separator_size = len("\n\n---\n\n")
     used = wrapper_size + sum(len(part) for part in parts)
@@ -475,26 +538,35 @@ def _append_project_skill_bodies(
         used += separator_size * (len(parts) - 1)
 
     for skill in project_skills:
-        prefix = f"### Skill: {skill['key']}\n\n"
+        key = str(skill["key"])
+        prefix = f"### Skill: {key}\n\n"
         next_separator = separator_size if parts else 0
         max_bytes: int | None = None
         if budget is not None:
             max_bytes = budget - used - next_separator - len(prefix)
-            if max_bytes <= 0:
-                break
             # The enumeration's size is only a hint because the file can be
             # replaced afterward. It avoids opening a file that cannot fit;
             # max_bytes on the descriptor-pinned read closes the race.
-            if int(skill.get("size_bytes", 0)) > max_bytes:
+            if max_bytes <= 0 or int(skill.get("size_bytes", 0)) > max_bytes:
+                skipped[key] = over_budget
                 continue
-        content = loader.load_skill(skill["key"], project_dir, max_bytes=max_bytes)
+        content = loader.load_skill(key, project_dir, max_bytes=max_bytes)
         if not content:
+            skipped[key] = "unreadable, empty or over its byte limit"
             continue
+        # Re-checked on the bytes actually delivered: the listing read that
+        # scoped this row came earlier, and the file can change in between.
+        meta = loader._parse_frontmatter_text(content)
+        scope = meta.get("repo_scope", "").strip()
+        if scope and not loader._repo_scope_satisfied(scope, project_dir):
+            continue  # out of scope: neither delivered nor named, like any scoped row
         part = prefix + loader.strip_frontmatter(content)
         if budget is not None and used + next_separator + len(part) > budget:
+            skipped[key] = over_budget
             continue
         parts.append(part)
         used += next_separator + len(part)
+    return skipped
 
 
 def _recency_boost(loader: SkillsLoader, path_str: str, fingerprint: str = "") -> float:
