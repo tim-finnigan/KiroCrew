@@ -34,6 +34,7 @@ reaches no ACP module and stays at module scope.
 
 from __future__ import annotations
 
+import bisect
 import logging
 import os
 import re
@@ -142,7 +143,70 @@ _ANY_IMAGE_SUFFIX_RE = re.compile(rf"\.{_SUFFIX_GROUP}", re.IGNORECASE)
 #: unreadable URL-embedded path is left exactly as written. A substitution has
 #: no such condition, and rewriting the inside of a URL is corruption rather
 #: than scrubbing. The consequence is stated in :func:`strip_image_refs`.
-_STANDALONE_LEAD_RE = re.compile(r"[\s(\[<\"']")
+#:
+#: The opening delimiters are shared with :data:`_OPENERS_RE` so the two cannot
+#: drift into a delimiter one of them treats as prose and the other as syntax.
+_OPENING_DELIMS = r"(\[<\"'"
+_STANDALONE_LEAD_RE = re.compile(rf"[\s{_OPENING_DELIMS}]")
+
+#: What may precede a path that is still ALONE on its line: indentation, and
+#: the list and quote markers a reply sets a file list in.
+_LINE_LEAD_RE = re.compile(r"[ \t]*(?:(?:[-*+>]|\d{1,9}[.)])[ \t]+)*")
+
+#: Anything but trailing blanks after a path on its line.
+_NOT_BLANK_RE = re.compile(r"[^ \t\r]")
+
+#: The delimiter pairs that close around ONE spaced path. A bare parenthesis
+#: and a bare square bracket are deliberately absent: prose wraps an aside in
+#: them far more often than it wraps a path, as in ``(see /var/log and the new
+#: logo.png)``. A ``](`` is not that -- it opens a markdown link's destination,
+#: which is a path and nothing else, so it is paired below.
+_QUOTE_CLOSER = {'"': '"', "'": "'", "<": ">"}
+
+#: A markdown link's opening, and the closer that pairs with it.
+_LINK_DEST_OPEN = "]("
+
+#: The delimiters a path can be written inside, which therefore sit between a
+#: span's last whitespace and the path itself rather than being part of it.
+_OPENERS_RE = re.compile(rf"[{_OPENING_DELIMS}]*")
+
+
+def _spaced_span_is_one_path(text: str, start: int, end: int, line_starts: list[int]) -> bool:
+    """Whether *text*[start:end], which holds a space or tab, is ONE path by its shape.
+
+    ``_PATH_CHARS`` admits horizontal whitespace because a real attachment name
+    can carry it (``Screen Shot 2024.png``), and the builder can afford that
+    because it inlines a candidate only once ``is_file()`` has said yes. Read
+    with no such gate, the class turns prose into a path: in ``check
+    /var/log/app and tell me why logo.png is broken`` it spans from ``/var`` to
+    ``.png``. So the shape alone vouches for a spaced span only where nothing
+    else can be meant: it is alone on its line (what a Slack or Telegram
+    message appends), a quote pair closes around it, or it is a markdown link's
+    destination, which can hold nothing but a path.
+
+    *line_starts* is every line's start offset, so finding this span's line is
+    a bisection rather than a scan back over a long single-line row.
+    """
+    line_start = line_starts[bisect.bisect_right(line_starts, start) - 1]
+    line_end = text.find("\n", end)
+    if line_end == -1:
+        line_end = len(text)
+    if _LINE_LEAD_RE.fullmatch(text, line_start, start) and not _NOT_BLANK_RE.search(
+        text, end, line_end
+    ):
+        return True
+    if start == 0 or end >= len(text):
+        return False
+    if text[start - 2 : start] == _LINK_DEST_OPEN:
+        return text[end] == ")"
+    return _QUOTE_CLOSER.get(text[start - 1]) == text[end]
+
+
+#: Stands in for a masked character. Outside ``_PATH_CHARS``,
+#: ``_WINDOWS_PATH_CHARS`` and ``_NOT_MID_TOKEN``, so it cannot sit inside a
+#: candidate, cannot start one, and does not stop the path right after it from
+#: starting one.
+_MASKED = "\x00"
 
 
 def _mask_code_spans(text: str, iter_fence_spans) -> str:
@@ -164,8 +228,20 @@ def _mask_code_spans(text: str, iter_fence_spans) -> str:
     for start, end in iter_fence_spans(text):
         for i in range(start, end):
             if chars[i] != "\n":
-                chars[i] = " "
-    return "\n".join(mask_inline_code(line) for line in "".join(chars).split("\n"))
+                chars[i] = _MASKED
+    fenced = "".join(chars)
+    if "`" not in fenced:
+        # Only a backtick run can make the inline pass change a character, and
+        # the fence pass already wrote the sentinel, so there is nothing to
+        # remap -- which is the common row, on a path that runs per history row.
+        return fenced
+    masked = "\n".join(mask_inline_code(line) for line in fenced.split("\n"))
+    # ``mask_inline_code`` is the shared port and blanks with a SPACE, which
+    # ``_PATH_CHARS`` admits -- so a candidate would run straight through a code
+    # span and out the other side. Every character the mask changed becomes the
+    # sentinel instead, which no path class holds, so code ends a candidate here
+    # the way a backtick ends one for the builder.
+    return "".join(_MASKED if m != o and m == " " else m for m, o in zip(masked, text, strict=True))
 
 
 def _bare_path_spans(text: str) -> list[tuple[int, int]]:
@@ -182,10 +258,27 @@ def _bare_path_spans(text: str) -> list[tuple[int, int]]:
         logger.debug("image refs: code-span mask failed", exc_info=True)
         return []
     spans: list[tuple[int, int]] = []
+    line_starts: list[int] | None = None
     for match in _PATH_RE.finditer(masked):
-        start = match.start(1)
+        start, end = match.span(1)
+        spaced = max(masked.rfind(" ", start, end), masked.rfind("\t", start, end)) + 1
+        if spaced:
+            # The span's last token can be a path on its own -- "check /var/log
+            # and /tmp/a.png" spans both -- and then THAT is the reference. It
+            # has to be the whole token, bar an opening delimiter the token is
+            # written inside ("why (/tmp/a.png) is broken"); a match further in
+            # is only the tail of a longer name ("photos (1)/img.png" matches
+            # from "/img.png"), and the full span stays the candidate.
+            last = _PATH_RE.search(masked, spaced, end)
+            if (
+                last is not None
+                and last.end(1) == end
+                and _OPENERS_RE.fullmatch(masked, spaced, last.start(1))
+            ):
+                start, spaced = last.start(1), 0
         if start > 0 and not _STANDALONE_LEAD_RE.match(text[start - 1]):
             continue
+        raw = text[start:end]
         # A protocol-relative URL ("//cdn/x.png") is a path shape to both
         # grammars -- `_POSIX_PATH_RE` because it opens with "/", and
         # `_WINDOWS_PATH_RE` because "//" also spells a UNC share. Whether a
@@ -202,9 +295,16 @@ def _bare_path_spans(text: str) -> list[tuple[int, int]]:
         # calls remote is left in place (nothing answers `is_file()` for it),
         # and one it calls local is stripped here exactly as the builder would
         # inline it out of the current turn.
-        if is_remote_destination(match.group(1)):
+        if is_remote_destination(raw):
             continue
-        spans.append((start, match.end(1)))
+        if not spaced:
+            spans.append((start, end))
+            continue
+        if line_starts is None:
+            line_starts = [0, *(m.end() for m in re.finditer("\n", text))]
+        # Whitespace with no shape to vouch for it: prose keeps every word.
+        if _spaced_span_is_one_path(text, start, end, line_starts):
+            spans.append((start, end))
     return spans
 
 
@@ -229,7 +329,7 @@ def strip_image_refs(text: str) -> str:
 
     The bare-path pass is ``_PATH_RE`` -- the same pattern the builder reads, so
     the two cannot drift into a path this function leaves behind for that one to
-    pick up -- narrowed by two conditions the builder does not need, because its
+    pick up -- narrowed by conditions the builder does not need, because its
     rewrite happens only after a file was actually read while a substitution has
     no such condition:
 
@@ -243,6 +343,18 @@ def strip_image_refs(text: str) -> str:
     exists can still be inlined out of a replayed row, exactly as it would be
     out of the current turn's text without this function. Narrowing here does
     not change that behaviour in either direction.
+
+    One more shape is read conservatively, because the grammar cannot settle it
+    and the scrubber has no file to ask. A span holding a space or tab may be a
+    spaced file name (``Screen Shot 2024.png``) or a stretch of prose (``check
+    /var/log/app and tell me why logo.png is broken``). Its last token is tried
+    as a path on its own first, and otherwise its shape has to vouch for it
+    (:func:`_spaced_span_is_one_path`: alone on its line, quoted, or a markdown
+    link's destination). The residue is a spaced path written mid-sentence with
+    none of those shapes, which keeps its text: settling it needs either a
+    filesystem probe -- a blocking call on the event loop, and the data home
+    behind it can be a network share -- or a rescan of the span's interior,
+    whose own failure mode is deleting the prose this function exists to keep.
 
     Remote and ``data:`` references are left alone, matching
     ``iter_local_refs``: neither is a local path, so neither is inlined and a
@@ -262,7 +374,13 @@ def strip_image_refs(text: str) -> str:
     whenever the file is readable, so this is that established rewrite extended
     to the unreadable case, on a per-build copy, with the on-disk row untouched.
 
-    Reads no files and mutates nothing: it returns a new string.
+    Reads no files and mutates nothing: it returns a new string. Every rule
+    above is lexical, so a history build makes no filesystem call at all. That
+    matters because this runs inline on the event loop, while the builder's
+    own probes are deliberately offloaded (``acp.client`` runs it through
+    ``asyncio.to_thread``): resolving the data home here would put a
+    ``Path.resolve()`` on a user-set ``KIROCREW_HOME`` -- a network share on a
+    roaming profile -- in front of every history row.
     """
     if not isinstance(text, str) or not text or not _ANY_IMAGE_SUFFIX_RE.search(text):
         return text

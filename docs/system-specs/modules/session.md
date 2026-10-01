@@ -2332,7 +2332,17 @@ through the attachment store's own `iter_local_refs`; bare paths go through the
 inliner's own `_PATH_RE`, narrowed to paths outside code spans that stand alone
 rather than sit inside a URL query, because the inliner rewrites text only after
 reading a file and an unconditional substitution would corrupt a URL or a code
-snippet instead of scrubbing it. A row's picture belonged
+snippet instead of scrubbing it. The grammar also admits a space or tab, since
+an attachment name can carry one, and that is the shape the text cannot settle:
+such a span is replaced when its last token is a path on its own, or when the
+span is alone on its line (list and quote markers allowed), quoted, or a
+markdown link's destination. Otherwise it keeps its text, so prose such as
+`check /var/log/app and tell me why logo.png is broken` survives intact. Every
+rule is lexical: the scrubber makes no filesystem call, because it runs inline
+on the event loop while the inliner's own probes are offloaded through
+`asyncio.to_thread`, and resolving a data home to settle a span would put a
+network stat in front of every history row. The residue is a spaced path written
+mid-sentence with none of those shapes. A row's picture belonged
 to an earlier turn and a text vehicle cannot carry bytes, so the reference is
 the only thing that would arrive, and both readings of it are wrong: while the
 file is still readable `build_prompt_blocks` re-inlines it (a picture an earlier
