@@ -187,6 +187,7 @@ from kiro_crew.slack.thread_parent import (
     parent_prompt_text,
     record_thread_parent,
 )
+from kiro_crew.start_priority import StartPriority
 from kiro_crew.stats import Stats
 from kiro_crew.subagent import SubagentManager
 from kiro_crew.task import Task
@@ -3163,8 +3164,12 @@ async def handle_message(
     channel_activation: str | None = None,
     had_voice_input: bool = False,
     _compaction_replay: _CompactionReplay | None = None,
+    start_priority: StartPriority = StartPriority.BACKGROUND,
 ) -> None:
     """Route a Slack message through ACP with streaming and tool approval.
+
+    ``start_priority`` orders a cold start: the Slack event and interaction paths
+    pass FOREGROUND for a person's message (rule: ``kiro_crew.start_priority``).
 
     NOTE: ``from_trusted_bot`` is consumed only in the error path (echo-loop
     suppression). Early-reply paths (hook auto-reply, !status, !sessions) still
@@ -3906,7 +3911,7 @@ async def handle_message(
         # LLM path — linked dashboard sessions may carry a different thread agent.
         _agent = _thread_agents.get(session_key) or channel_agent or _get_default_agent() or None
         client, is_new, resumed = await sessions.get_or_create(
-            session_key, agent=_agent, channel_id=channel
+            session_key, agent=_agent, channel_id=channel, start_priority=start_priority
         )
         _acquired = True
         if _compaction_replay is not None:
@@ -4813,6 +4818,7 @@ async def handle_message(
                         _compaction_replay=_CompactionReplay(
                             attempt=_attempt + 1, stop_gen_at_entry=_stop_gen_at_entry
                         ),
+                        start_priority=start_priority,
                     )
                 finally:
                     # The replay has settled and released its permit (or never

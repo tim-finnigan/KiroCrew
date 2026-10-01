@@ -833,7 +833,7 @@ class TestSessionSharingParentReset:
             def __init__(self, agent=None, **kwargs):
                 pass
 
-            async def spawn(self):
+            async def spawn(self, start_priority=None):
                 pass
 
             def is_alive(self):
@@ -882,7 +882,7 @@ class TestSessionSharingParentReset:
             def __init__(self, agent=None):
                 self._alive = False
 
-            async def spawn(self):
+            async def spawn(self, start_priority=None):
                 calls["n"] += 1
                 if calls["n"] == 1:
                     raise AcpRuntimeDead("transient spawn failure")
@@ -917,7 +917,7 @@ class TestSessionSharingParentReset:
             def __init__(self, agent=None):
                 pass
 
-            async def spawn(self):
+            async def spawn(self, start_priority=None):
                 calls["n"] += 1
                 raise AcpRuntimeDead("permanent spawn failure")
 

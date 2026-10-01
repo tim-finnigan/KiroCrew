@@ -104,6 +104,7 @@ from kiro_crew.session_lifecycle import (
     decline_stop,
     force_stop_keeping_others,
 )
+from kiro_crew.start_priority import person_priority
 from kiro_crew.webex import cards
 from kiro_crew.webex.attachments import process_webex_attachments
 from kiro_crew.webex.cards import LiveChoices, read_press
@@ -270,7 +271,12 @@ def _reply_envelope(inbound: "WebexInbound | None", place: _QueuedPlace) -> "Web
     comes from *place*, and deliberately stashing a "last seen" inbound would reintroduce
     the defect this module fixes, one channel further out.
     """
-    base = inbound if inbound is not None else WebexInbound(person_email="", room_id="", text="")
+    base = (
+        inbound
+        if inbound is not None
+        # The entry being replayed is a person's own message (kiro_crew.start_priority).
+        else WebexInbound(person_email="", room_id="", text="", person_origin=True)
+    )
     return replace(
         base,
         room_id=place.room_id,
@@ -691,6 +697,7 @@ class WebexDispatcher:
         try:
             await drive_turn(
                 ChannelTurn(
+                    start_priority=person_priority(inbound.person_origin),
                     channel_type="webex",
                     session_key=session_key,
                     inbound_route=inbound_route,

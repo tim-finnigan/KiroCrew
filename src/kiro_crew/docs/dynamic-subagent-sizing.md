@@ -221,25 +221,25 @@ value somewhere worse, and the operator's real lever already exists:
 `agent.session_start_concurrency` sizes the gate, and the bound tracks it.
 
 Time spent WAITING FOR A PERMIT is not charged to the startup deadline, on
-either start path. `runtime.create_session` runs under the ACP
-`SessionStartGate` (`agent.session_start_concurrency`, default 2) and fires two
-callbacks around the wait: `on_gate_queued` immediately before the wait for a
-permit begins, and `on_gate_acquired` at gate exit with the queue wait. The
-manager's `_gate_wait_mark` stamps `_gate_wait_started` on the first, and while
-that stamp is set the startup watchdog reads the start clock as frozen at that
-moment; `_gate_exit_reset` clears the stamp and restarts the clock on the
-second. So the deadline measures time spent STARTING -- before the gate (a
-process spawn on the dedicated path) and from gate exit until the start's exit
-(a runtime PID, or for a start that publishes none its first answer) -- and
-never time queued behind other starts, however long the queue. The wait is
-finite without a deadline of its own: every permit holder is on a running clock
-from acquisition and is reaped at the base deadline if its `session/new` has
-not returned, the request has its own budget (`agent.session_start_timeout_secs`),
-and the gate keeps a headroom of permits no late-start collector may hold. Both
-start paths install the same pair: the session-shared one hands them to the
-parent runtime's `create_session` directly, and the dedicated-process one
-(`model` / `reasoning_effort` spawns) threads them through `get_or_create` ->
-provider factory -> `AcpProvider` to its own process's `create_session`.
+either start path. A start can queue at three places: the session manager's
+cold-start semaphore, the gateway's spawn admission, and the ACP
+`SessionStartGate` (`agent.session_start_concurrency`) around `session/new`.
+Each fires two callbacks around its wait: `on_gate_queued` immediately before
+the wait begins, and `on_gate_acquired` when the permit is granted, with the
+wait and the queue's name. The manager's `_gate_wait_mark` stamps
+`_gate_wait_started` on the first, and while that stamp is set the startup
+watchdog reads the start clock as paused at that moment; `_gate_exit_reset`
+clears the stamp and adds the wait to `_start_queue_wait_ms` on the second. So
+the deadline measures time spent STARTING since execution began, minus the time
+queued, never time queued behind other starts, however long the queues. The
+dedicated-process path (`model` / `reasoning_effort` spawns) pauses at all three
+queues, threading the pair through `get_or_create` -> provider factory ->
+`AcpProvider` to its own process's spawn and `create_session`; the
+session-shared path pauses at the gate, handing the pair to the parent
+runtime's `create_session` directly. The paused total is bounded: a start that
+has spent more than `_START_QUEUE_MAX_SECS` queued without starting is ended as
+"Never started: start queues saturated", because a queue's holders are not all
+subagents a watchdog would reap.
 
 The startup watchdog's deadline does not change with how many agents are in
 startup. Its size comes from the start budgets: `agent.session_start_timeout_secs`

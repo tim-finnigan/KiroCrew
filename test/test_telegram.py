@@ -443,7 +443,13 @@ class FakeSessions:
         self._pid: Any = None
 
     async def get_or_create(
-        self, key: str, *, agent: Any = None, channel_id: Any = None, model: Any = None
+        self,
+        key: str,
+        *,
+        agent: Any = None,
+        channel_id: Any = None,
+        model: Any = None,
+        start_priority=None,
     ) -> Any:
         # The shared BACKGROUND session is not a turn, and recording it in the
         # turn-scoped fields makes every turn test read as if two turns ran: the

@@ -1116,6 +1116,12 @@ class RunEventCoordinator(ManagerComponent):
         info._exec_started = time.time()
         info._first_stream_started = None
         info._startup_cotenant_frames = 0
+        # The paused part of the clock belongs to THIS attempt: a recovery respawn
+        # re-runs the same info, and a queue wait the previous attempt accumulated
+        # (or a mark it was cancelled inside) would be subtracted from a clock that
+        # never paid it -- blinding the watchdog, or spending the saturation cap.
+        info._start_queue_wait_ms = 0.0
+        info._gate_wait_started = None
         # The durable row stays ``starting`` until this run's OWN turn produces
         # its first stream event addressed to its session
         # (``ensure_running_marked`` in the stream loop below):
@@ -3293,62 +3299,65 @@ class RunEventCoordinator(ManagerComponent):
             return False
         return self._manager._sessions.is_session_sharing_eligible(info.parent_session_key)
 
-    def _gate_exit_reset_impl(self, info: SubagentInfo) -> "Callable[[float], None]":
-        """The ``on_gate_acquired`` callback for *info*'s ``session/new``.
+    def _gate_exit_reset_impl(self, info: SubagentInfo) -> "Callable[..., None]":
+        """The ``on_gate_acquired`` callback for *info*'s start queues.
 
-        Gate EXIT is the start of this run's start budget: the startup watchdog
-        (``_exec_started``) and the stall clock must not count the time spent
-        queued behind other ``session/new`` requests at the ``SessionStartGate``
-        -- that wait is admission's cost, not this start's. ONE definition for
-        both start paths: ``_create_shared_session`` hands it to the parent
-        runtime's ``create_session`` directly, and ``_run_inner`` threads it
-        through ``get_or_create`` -> provider factory -> ``AcpProvider`` to the
-        dedicated process's own ``create_session``. Without the reset on the
-        dedicated path -- every ``model`` / ``reasoning_effort`` spawn -- a wide
-        fan-out's gate queue time would be charged to the fixed startup deadline
-        and healthy starts reaped as failed. The reset fires only once the
-        permit is HELD; its companion :meth:`_gate_wait_mark_impl` marks gate
-        ENTRY, and between the two the watchdog reads the clock as frozen. So a
-        start wedged before the gate keeps its original, running clock and is
-        caught; one queued at the gate is not charged for the queue; and one
-        wedged after the permit is caught at the base deadline from gate exit.
+        A start's clock PAUSES while it waits for a permit and resumes when it gets
+        one: the startup watchdog (:meth:`_is_startup_stalled`) measures from
+        ``_exec_started`` minus ``_start_queue_wait_ms``, the time spent queued
+        in total, so only real start work counts against the deadline and a start
+        overtaken in a queue is not reaped for the wait. ONE definition for both
+        start paths: the dedicated path (``_run_inner`` -> ``get_or_create`` ->
+        ``AcpProvider``) fires it at all three start queues -- the cold-start
+        semaphore, the spawn admission and the ``session/new`` gate -- and the
+        shared path (``_create_shared_session``) at the ``session/new`` gate.
+        :meth:`_gate_wait_mark_impl` marks queue ENTRY; between the two the
+        watchdog reads the clock as paused. The paused total is itself bounded
+        (``monitoring._START_QUEUE_MAX_SECS``), so a start parked behind holders
+        no watchdog bounds still ends.
         """
+        # Imported here: a rebound ``_impl`` resolves globals in ``kiro_crew.subagent``.
+        from kiro_crew.start_priority import START_QUEUE_LOG_MIN_MS, START_QUEUE_SESSION_NEW
 
-        def _on_gate_acquired(queue_wait_ms: float) -> None:
+        def _on_gate_acquired(queue_wait_ms: float, queue: str = START_QUEUE_SESSION_NEW) -> None:
             now = time.time()
-            info._exec_started = now
+            # The pause is measured on the watchdog's own clock (``time.time()``,
+            # from the mark), not on the queue's monotonic wait: the two disagree
+            # by however long the host was suspended during the wait, and a laptop
+            # that slept in a gate queue would have that sleep charged as start
+            # time. The queue's own measurement is the log's, and the fallback for
+            # a grant whose entry was never marked.
+            marked = info._gate_wait_started
             info._gate_wait_started = None
             info.last_activity = now
-            info._start_queue_wait_ms = float(queue_wait_ms)
-            if queue_wait_ms > 0:
+            info._start_queue_wait_ms += (
+                max(0.0, now - marked) * 1000.0 if marked is not None else float(queue_wait_ms)
+            )
+            if queue_wait_ms >= START_QUEUE_LOG_MIN_MS:
                 logger.info(
-                    "Subagent %s: session-start gate held %.0fms; start clock reset",
+                    "Subagent %s: waited %.0fms at the %s queue (start clock paused; "
+                    "%.0fms queued in total)",
                     info.id,
                     queue_wait_ms,
+                    queue,
+                    info._start_queue_wait_ms,
                 )
 
         return _on_gate_acquired
 
-    def _gate_wait_mark_impl(self, info: SubagentInfo) -> "Callable[[], None]":
-        """The ``on_gate_queued`` callback for *info*'s ``session/new``.
+    def _gate_wait_mark_impl(self, info: SubagentInfo) -> "Callable[..., None]":
+        """The ``on_gate_queued`` callback for *info*'s start queues.
 
-        Fires immediately before the wait for a ``SessionStartGate`` permit
-        begins. It stamps ``_gate_wait_started``, and while that is set the
-        startup watchdog (:meth:`_is_startup_stalled`) reads the start clock as
-        frozen at that moment: a run queued for a permit is not starting, and
-        the queue's length is set by the starts ahead of it, not by anything
-        this run does. Without the freeze a waiter's clock keeps running through
-        the whole queue while the holders ahead of it have theirs reset at
-        acquisition, so the last waiter in a round can be reaped as it is about
-        to be served with nothing wrong. Same ONE definition for both start
-        paths as :meth:`_gate_exit_reset_impl`, which clears the mark at
-        acquisition. The wait is finite: every permit holder is itself on a
-        running clock from acquisition and is reaped at the base deadline if its
-        ``session/new`` has not returned, the request has its own budget, and
-        the gate keeps a headroom of permits no late-start collector may hold.
+        Fires immediately before a wait for a start-queue permit begins. It stamps
+        ``_gate_wait_started``, and while that is set the startup watchdog reads the
+        start clock as paused at that moment: a run queued for a permit is not
+        starting, and the queue's length is set by the starts ahead of it. Same ONE
+        definition for both start paths as :meth:`_gate_exit_reset_impl`, which
+        clears the mark and adds the wait to the paused total.
         """
+        from kiro_crew.start_priority import START_QUEUE_SESSION_NEW
 
-        def _on_gate_queued() -> None:
+        def _on_gate_queued(queue: str = START_QUEUE_SESSION_NEW) -> None:
             info._gate_wait_started = time.time()
 
         return _on_gate_queued
@@ -3377,9 +3386,9 @@ class RunEventCoordinator(ManagerComponent):
         shared_runtime: AcpRuntime = runtime
 
         cwd = info.cwd or str(getattr(self._manager._sessions, "_pool_cwd", ""))
-        # The clock freezes at gate ENTRY (``_gate_wait_mark``) and restarts at
-        # gate EXIT (``_gate_exit_reset``); the dedicated-process path in
-        # ``_run_inner`` installs the same pair.
+        # The clock pauses at gate ENTRY (``_gate_wait_mark``) and resumes at gate
+        # EXIT (``_gate_exit_reset``); the dedicated-process path in ``_run_inner``
+        # installs the same pair at every start queue.
         _on_gate_acquired = self._manager._gate_exit_reset(info)
         _on_gate_queued = self._manager._gate_wait_mark(info)
 
@@ -3466,8 +3475,11 @@ class RunEventCoordinator(ManagerComponent):
         if getattr(collector, "outcome", None) == "adopted" and provider is not None:
             info._late_start_provider = None
             now = time.time()
-            # The adopted session is this run's real start.
+            # The adopted session is this run's real start: its clock starts here,
+            # so the queue waits the abandoned attempt accumulated are not its.
             info._exec_started = now
+            info._start_queue_wait_ms = 0.0
+            info._gate_wait_started = None
             info.last_activity = now
             # ``recovering`` is the lost-owner (claimable) state; the adopted
             # session is live under our lease, so the row leaves it now rather

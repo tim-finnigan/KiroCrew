@@ -44,6 +44,7 @@ from typing import Any, Awaitable, Callable, Optional
 from kiro_crew.apps.builtins.meetings.backend import constants as k
 from kiro_crew.apps.builtins.meetings.backend import store
 from kiro_crew.security import redact
+from kiro_crew.start_priority import StartPriority
 
 logger = logging.getLogger("kirocrew.app.meetings")
 
@@ -91,7 +92,9 @@ def translation_prompt(text: str, language_code: str) -> str:
     )
 
 
-async def run_oneshot_translation(sessions: Any, prompt: str) -> str:
+async def run_oneshot_translation(
+    sessions: Any, prompt: str, *, start_priority: StartPriority = StartPriority.BACKGROUND
+) -> str:
     """One tool-less model call in an isolated ephemeral session; raw text back.
 
     Mirrors issue-radar's ``_run_oneshot_model``, which is the sanctioned pattern
@@ -103,11 +106,16 @@ async def run_oneshot_translation(sessions: Any, prompt: str) -> str:
 
     It reuses the user's own Kiro Crew backend, so live translation needs no
     separate API key or cloud account.
+
+    BACKGROUND by default: the live stream runs unattended, one start per line,
+    whether or not anyone has the panel open (rule: ``kiro_crew.start_priority``).
     """
     from kiro_crew.llm_helpers import ToolApprovalPolicy, stream_and_collect
 
     key = f"{k.SLOT_PREFIX}-translate-{uuid.uuid4().hex}"
-    provider, _is_new, _resumed = await sessions.get_or_create(key, agent="kirocrew-lite")
+    provider, _is_new, _resumed = await sessions.get_or_create(
+        key, agent="kirocrew-lite", start_priority=start_priority
+    )
     try:
         return await stream_and_collect(
             provider, prompt, approval_policy=ToolApprovalPolicy.REJECT_ALL

@@ -27,8 +27,10 @@ class TestSessionStartSemaphore:
         cfg.session.pool_ttl_secs = 0
         sm = SessionManager(cfg)
         assert hasattr(sm, "_start_sem")
-        # Semaphore(4) limits concurrent cold-starts for memory safety
-        assert sm._start_sem._value == 4
+        # The background width plus the person reserve (kiro_crew.start_priority).
+        from kiro_crew.session import _FOREGROUND_COLD_START_RESERVE, _MAX_CONCURRENT_COLD_STARTS
+
+        assert sm._start_sem._value == _MAX_CONCURRENT_COLD_STARTS + _FOREGROUND_COLD_START_RESERVE
 
     @pytest.mark.asyncio
     async def test_semaphore_limits_concurrent_starts(self):

@@ -61,6 +61,7 @@ from kiro_crew.messaging.link import (
 )
 from kiro_crew.messaging.pre_turn import resolve_pre_turn
 from kiro_crew.safety_override import safety_override
+from kiro_crew.start_priority import person_priority
 
 if TYPE_CHECKING:
     from kiro_crew.config.loader import KiroCrewConfig
@@ -243,6 +244,7 @@ class FeishuDispatcher:
 
         await drive_turn(
             ChannelTurn(
+                start_priority=person_priority(inbound.person_origin),
                 channel_type="feishu",
                 session_key=session_key,
                 inbound_route=inbound_route,

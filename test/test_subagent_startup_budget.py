@@ -54,7 +54,18 @@ def _starting(now: float, elapsed: float) -> SubagentInfo:
 
 
 def _one_clock(budget: float, collect: int = COLLECT) -> float:
-    return budget + collect + _STARTUP_COLLECT_GRACE_SECS + _STARTUP_LAUNCH_MARGIN_SECS
+    """Every phase one start clock RUNS through: the spawn's own ``initialize``
+    handshake, ``session/new``, the late-start collector's wait and the margin.
+    The clock pauses only in a start QUEUE, so each of these counts."""
+    from kiro_crew.constants import INITIALIZE_TIMEOUT_SECS
+
+    return (
+        budget
+        + INITIALIZE_TIMEOUT_SECS
+        + collect
+        + _STARTUP_COLLECT_GRACE_SECS
+        + _STARTUP_LAUNCH_MARGIN_SECS
+    )
 
 
 @pytest.mark.parametrize("budget", [90, 900])

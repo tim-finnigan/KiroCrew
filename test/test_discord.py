@@ -440,6 +440,7 @@ class FakeSessions:
         channel_id: Any = None,
         model: Any = None,
         wait_if_busy: bool = True,
+        start_priority=None,
     ) -> Any:
         self.last_agent = agent
         self.last_model = model

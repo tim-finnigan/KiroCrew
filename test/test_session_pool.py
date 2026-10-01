@@ -15,6 +15,7 @@ import pytest
 
 from kiro_crew import platform_compat
 from kiro_crew.acp.session_handle import WatchdogSettings
+from kiro_crew.start_priority import StartPriority
 
 
 @pytest.fixture(autouse=True)
@@ -127,7 +128,11 @@ class TestMemberContextAllocation:
             )
         assert result is expected
         mgr.get_or_create.assert_awaited_once_with(
-            "task:child", agent="review", approval_policy="", cwd="/work"
+            "task:child",
+            agent="review",
+            approval_policy="",
+            cwd="/work",
+            start_priority=StartPriority.BACKGROUND,
         )
         mgr._get_or_bootstrap_run_runtime.assert_not_awaited()
 

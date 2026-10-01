@@ -172,6 +172,7 @@ from kiro_crew.messaging.queue_receipt import (
     ReceiptSurface,
     receipt_address_key,
 )
+from kiro_crew.start_priority import person_priority
 
 logger = logging.getLogger(__name__)
 
@@ -1204,6 +1205,7 @@ class TelegramDispatcher:
             _memory_store = await session_store_for_turn(self.ctx_builder, session_key)
             provider, is_new, resumed = await self.sessions.get_or_create(
                 session_key,
+                start_priority=person_priority(msg.person_origin),
                 agent=agent,
                 channel_id=channel_id,
                 # "" is the Auto row's stored value; collapse it to None so Auto
@@ -2074,6 +2076,8 @@ class TelegramDispatcher:
                     chat_type=origin.chat_type,
                     username=origin.username,
                     attachments=all_attachments,
+                    # A person's own message, re-dispatched (kiro_crew.start_priority).
+                    person_origin=True,
                 ),
                 drain=False,
                 # Drained payloads are pure turn content: a queued "/new" must reach
@@ -3450,6 +3454,8 @@ class TelegramDispatcher:
                 ),
                 chat_type=cb.chat_type,
                 from_widget=True,
+                # A person's own message, re-dispatched (kiro_crew.start_priority).
+                person_origin=True,
             )
             # The label is MODEL-AUTHORED. A leading command token is ordinary
             # turn content, never permission for the model to execute `/new`,

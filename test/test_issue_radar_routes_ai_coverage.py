@@ -49,6 +49,7 @@ from dashboard_owner_helpers import NoConfiguredOwner
 from kiro_crew import llm_helpers
 from kiro_crew.apps.builtins.issue_radar.backend import github_client as gh
 from kiro_crew.apps.builtins.issue_radar.backend import provider, routes, store
+from kiro_crew.start_priority import StartPriority
 
 BASE = "/api/apps/issue-radar"
 
@@ -184,7 +185,9 @@ class TestRunOneshotModel(unittest.IsolatedAsyncioTestCase):
         # Tool-less by construction: the ephemeral session may not run anything.
         _, kwargs = stream.call_args
         self.assertEqual(kwargs["approval_policy"], llm_helpers.ToolApprovalPolicy.REJECT_ALL)
-        state.sessions.get_or_create.assert_awaited_once_with("k1", agent="kirocrew-lite")
+        state.sessions.get_or_create.assert_awaited_once_with(
+            "k1", agent="kirocrew-lite", start_priority=StartPriority.FOREGROUND
+        )
         state.sessions.release.assert_called_once_with("k1")
         state.sessions.destroy.assert_awaited_once_with("k1")
 

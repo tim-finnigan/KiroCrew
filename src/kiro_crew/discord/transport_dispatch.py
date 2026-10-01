@@ -164,6 +164,7 @@ from kiro_crew.messaging.queue_receipt import (
     ReceiptSurface,
     receipt_address_key,
 )
+from kiro_crew.start_priority import person_priority
 
 logger = logging.getLogger(__name__)
 
@@ -887,6 +888,7 @@ class DiscordDispatcher:
                 _memory_store = await session_store_for_turn(self.ctx_builder, session_key)
                 provider, is_new, resumed = await self.sessions.get_or_create(
                     session_key,
+                    start_priority=person_priority(msg.person_origin),
                     agent=agent,
                     channel_id=chan_id,
                     wait_if_busy=False,
@@ -1035,6 +1037,7 @@ class DiscordDispatcher:
                 # next conversation") when one is already live, so the two agree.
                 provider, is_new, resumed = await self.sessions.get_or_create(
                     session_key,
+                    start_priority=person_priority(msg.person_origin),
                     agent=agent,
                     channel_id=chan_id,
                     model=self._model_pref.get(scope_id) or None,
@@ -1857,6 +1860,8 @@ class DiscordDispatcher:
                     text=combined,
                     thread_id=origin.thread_id or None,
                     attachments=attachments,
+                    # A person's own message, re-dispatched (kiro_crew.start_priority).
+                    person_origin=True,
                 ),
                 drain=False,
                 interpret_commands=False,
@@ -2285,6 +2290,8 @@ class DiscordDispatcher:
                 conversation_id=itx.channel_id,
                 text=choice_text,
                 thread_id=thread_id or None,
+                # A person's own message, re-dispatched (kiro_crew.start_priority).
+                person_origin=True,
             )
             # An option label is MODEL-AUTHORED: the agent chose the text of the
             # button, and the press only says which one the user picked. So the
@@ -3360,5 +3367,7 @@ class DiscordDispatcher:
             conversation_id=itx.channel_id,
             text=f"!{name} {argument}".strip(),
             thread_id=thread_id or None,
+            # A person's own message, re-dispatched (kiro_crew.start_priority).
+            person_origin=True,
         )
         await self.handle_message(synthetic)

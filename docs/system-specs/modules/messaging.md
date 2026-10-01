@@ -181,7 +181,9 @@ directions, so a transport cannot declare a convention it does not follow.
 
 ### `InboundMessage`
 
-Normalized, channel-agnostic inbound message: `channel_type`, `user_id`, `conversation_id`, `text`, `thread_id=None`, `attachments=[]`, `is_mention=False`; `to_dict()` for serialization.
+Normalized, channel-agnostic inbound message: `channel_type`, `user_id`, `conversation_id`, `text`, `thread_id=None`, `attachments=[]`, `is_mention=False`, `person_origin=False`; `to_dict()` for serialization.
+
+`person_origin` is set by a transport's `receive` on a message a PERSON sent, and by the dispatcher on one it rebuilds for a person (a button press, a slash command, a queued message it drains). A message the gateway composed itself — an auto-nudge or monitor wake, built by `build_inbound` — leaves it False, which is what keeps that wake out of the person lane. The dispatchers turn it into the turn's start priority (`person_priority`; [acp-client](acp-client.md) § Start priority).
 
 ## Layer 2 — `TurnDriver` (`driver.py`)
 

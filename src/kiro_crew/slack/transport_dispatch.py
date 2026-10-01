@@ -81,6 +81,7 @@ from kiro_crew.slack.thread_parent import (
     parent_prompt_text,
     record_thread_parent,
 )
+from kiro_crew.start_priority import StartPriority
 from kiro_crew.stats import Stats
 
 if TYPE_CHECKING:
@@ -195,8 +196,12 @@ async def handle_message_transport(
     gateway: Any | None = None,
     from_trusted_bot: bool = False,
     dm_single_session: bool = False,
+    start_priority: StartPriority = StartPriority.BACKGROUND,
 ) -> None:
     """Drive a Slack message through the new transport path end-to-end.
+
+    ``start_priority``: as for ``handler.handle_message`` (rule:
+    ``kiro_crew.start_priority``).
 
     This replaces handle_message when the feature flag is on. It uses
     TurnDriver + SlackRenderer instead of the inline stream loop.
@@ -578,7 +583,7 @@ async def handle_message_transport(
             or _DEFAULT_KIROCREW_AGENT
         )
         client, is_new, resumed = await sessions.get_or_create(
-            session_key, agent=_agent, channel_id=channel
+            session_key, agent=_agent, channel_id=channel, start_priority=start_priority
         )
         _acquired = True
         # Authorize the outbound-image root, which only exists once the provider

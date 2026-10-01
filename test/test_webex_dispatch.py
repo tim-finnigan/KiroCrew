@@ -108,7 +108,7 @@ class FakeSessions:
         self.begin_turns = 0
         self.reserved_generations: set[str] = set()
 
-    async def get_or_create(self, key, *, agent=None, channel_id=None):
+    async def get_or_create(self, key, *, agent=None, channel_id=None, start_priority=None):
         self.last_agent = agent
         if self._raise is not None:
             raise self._raise

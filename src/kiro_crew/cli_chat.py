@@ -43,6 +43,7 @@ from kiro_crew.providers.base import (
 from kiro_crew.sandbox import SandboxCeilingUnsealable
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
 from kiro_crew.sel import sel
+from kiro_crew.start_priority import StartPriority
 from kiro_crew.terminal_safe import safe_terminal_line
 
 logger = logging.getLogger(__name__)
@@ -284,6 +285,8 @@ async def _chat(message: str | None, model: str | None, agent: str | None = None
     provider: LLMProvider = build_provider_factory(cfg)(
         _CLI_SESSION_KEY, agent=agent_name, channel_id=channel_id
     )
+    # The person at the terminal waits on every start (kiro_crew.start_priority).
+    provider.start_priority = StartPriority.FOREGROUND
     # This consumer implements the low-fidelity child downgrade, so opt in:
     # without this the handle-level fail-close gate rejects every low-fidelity
     # child permission request before it reaches `_answer_permission`, audited

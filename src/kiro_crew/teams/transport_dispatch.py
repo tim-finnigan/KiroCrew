@@ -90,6 +90,7 @@ from kiro_crew.messaging.session_resume import refused_resume_is_restricted
 from kiro_crew.messaging.upload_gate import session_is_restricted
 from kiro_crew.safety_override import safety_override
 from kiro_crew.sel import sel
+from kiro_crew.start_priority import person_priority
 from kiro_crew.teams.approvals import TeamsApprovalDecider
 from kiro_crew.teams.attachments import append_attachment_context, process_teams_attachments
 from kiro_crew.teams.cards import (
@@ -272,6 +273,9 @@ def _wake_template(origin: _QueuedOrigin) -> "TeamsInbound":
     return TeamsInbound(
         conversation_id=origin.conversation_id,
         conversation_type=_PERSONAL_SCOPE,
+        # The entry being replayed is a person's own message, whatever woke the
+        # drain (kiro_crew.start_priority).
+        person_origin=True,
         service_url=origin.service_url,
         text="",
     )
@@ -669,6 +673,7 @@ class TeamsDispatcher:
         try:
             await drive_turn(
                 ChannelTurn(
+                    start_priority=person_priority(inbound.person_origin),
                     channel_type="teams",
                     session_key=session_key,
                     inbound_route=inbound_route,
