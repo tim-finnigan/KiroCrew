@@ -57,6 +57,7 @@ from kiro_crew.messaging.inbound_spool import InboundRoute
 from kiro_crew.messaging.link import build_dm_session_key, seed_generation
 from kiro_crew.messaging.queue_drain import entries_queued_by, owner_token
 from kiro_crew.messaging.transport import InboundMessage
+from kiro_crew.prompt_attachments import PromptAttachment
 from kiro_crew.safety_override import safety_override
 from kiro_crew.session_lifecycle import (
     STOP_DECLINED_COMPACTING_TEXT,
@@ -256,6 +257,10 @@ class WeixinDispatcher:
         # sender is told to resend once the turn ends, and any accompanying text
         # still reaches the turn via steer.
         attachment_temp_paths: list[str] = []
+        # The ingested images as the structured list the turn hands to the
+        # provider -- the ONLY way they reach the model; the paths inlined into
+        # the text are for agent file tools.
+        prompt_attachments: tuple[PromptAttachment, ...] = ()
         # Captured BEFORE ingestion, which clears ``inbound.attachments`` and
         # inlines the temp paths into the text. The durable inbound spool needs
         # both originals: the count is what tells the restart
@@ -265,7 +270,9 @@ class WeixinDispatcher:
         original_text = text
         original_attachments = len(inbound.attachments or ())
         if inbound.attachments:
-            ingested, attachment_temp_paths = await self._ingest_or_refuse(inbound, user_id, text)
+            ingested, attachment_temp_paths, prompt_attachments = await self._ingest_or_refuse(
+                inbound, user_id, text
+            )
             if ingested is None:
                 return
             text = ingested
@@ -278,6 +285,7 @@ class WeixinDispatcher:
                 text,
                 original_text=original_text,
                 original_attachments=original_attachments,
+                attachments=prompt_attachments,
             )
         finally:
             if attachment_temp_paths:
@@ -285,7 +293,7 @@ class WeixinDispatcher:
 
     async def _ingest_or_refuse(
         self, inbound: InboundMessage, user_id: str, text: str
-    ) -> tuple[str | None, list[str]]:
+    ) -> tuple[str | None, list[str], tuple[PromptAttachment, ...]]:
         """Ingest the message's attachments, or refuse them for a live turn.
 
         Returns ``(text, temp_paths)``, where ``text`` is ``None`` when there is
@@ -304,7 +312,7 @@ class WeixinDispatcher:
         if self.sessions.is_busy(self._session_key(user_id)):
             inbound.attachments = []
             await self._say_resend_after_turn(user_id)
-            return (text if (text or "").strip() else None), []
+            return (text if (text or "").strip() else None), [], ()
 
         try:
             result = await process_weixin_attachments(inbound.attachments)
@@ -314,10 +322,14 @@ class WeixinDispatcher:
             logger.exception("weixin: attachment ingestion failed for %s", user_id)
             inbound.attachments = []
             return (
-                f"{text}\n\n[Attachment could not be read]"
-                if text
-                else "[Attachment could not be read]"
-            ), []
+                (
+                    f"{text}\n\n[Attachment could not be read]"
+                    if text
+                    else "[Attachment could not be read]"
+                ),
+                [],
+                (),
+            )
 
         inbound.attachments = []
         temp_paths = list(result.temp_paths)
@@ -325,9 +337,16 @@ class WeixinDispatcher:
             if temp_paths:
                 await asyncio.to_thread(cleanup_attachments, temp_paths)
             await self._say_resend_after_turn(user_id)
-            return (text if (text or "").strip() else None), []
+            return (text if (text or "").strip() else None), [], ()
 
-        return append_attachment_context(text, result), temp_paths
+        # The third element is the ingested images as the structured list the
+        # turn hands to the provider -- the only way they reach the model; the
+        # paths appended to the text are for agent tools.
+        return (
+            append_attachment_context(text, result),
+            temp_paths,
+            result.prompt_attachments(),
+        )
 
     async def _say_resend_after_turn(self, user_id: str) -> None:
         """Tell a mid-turn sender their attachment needs resending."""
@@ -341,6 +360,7 @@ class WeixinDispatcher:
         *,
         original_text: str = "",
         original_attachments: int = 0,
+        attachments: tuple[PromptAttachment, ...] = (),
     ) -> None:
         """Session acquisition + turn dispatch for one already-ingested message.
 
@@ -408,6 +428,7 @@ class WeixinDispatcher:
                 conversation_id=conversation_id,
                 agent=agent,
                 user_text=text,
+                attachments=attachments,
                 renderer=renderer,
                 approval_mode=self.approval_mode,
                 decider=None,  # iLink can't render approve/deny buttons
