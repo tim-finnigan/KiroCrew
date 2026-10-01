@@ -2282,8 +2282,12 @@ file-tree-container{
 .dashboard-navigation[data-compact="true"] .nav-item{justify-content:flex-start}
 .dashboard-navigation[data-compact="true"] .nav-section{overflow:hidden}
 .dashboard-navigation .nav-item > span:not(.app-icon-nav){min-width:0}
-.grabber-shell .session-list-drawer{padding-bottom:0}
-.grabber-shell .session-list-drawer .sidebar-inner{border-top:0;border-bottom:0;border-left:0;border-radius:0;box-shadow:none}
+/* The sessions sidebar is the first column INSIDE the surface, so it must drop
+   its own card frame (border + rounding + shadow) and sit flush against the
+   surface's rounded corner — otherwise its corner stacks inside the surface's
+   corner as a doubled curve. (The sidebar carries `sidebar-inner` via
+   LIST_SHELL_CLS; there is no `.session-list-drawer` wrapper on this tree.) */
+.grabber-shell .sidebar-inner{border:0;border-radius:0;box-shadow:none}
 @media(prefers-reduced-motion:reduce){
   .grabber-shell{transition:none!important}
 }
