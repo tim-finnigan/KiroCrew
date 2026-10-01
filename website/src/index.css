@@ -2282,12 +2282,12 @@ file-tree-container{
 .dashboard-navigation[data-compact="true"] .nav-item{justify-content:flex-start}
 .dashboard-navigation[data-compact="true"] .nav-section{overflow:hidden}
 .dashboard-navigation .nav-item > span:not(.app-icon-nav){min-width:0}
-/* The sessions sidebar is the first column INSIDE the surface, so it must drop
-   its own card frame (border + rounding + shadow) and sit flush against the
-   surface's rounded corner — otherwise its corner stacks inside the surface's
-   corner as a doubled curve. (The sidebar carries `sidebar-inner` via
-   LIST_SHELL_CLS; there is no `.session-list-drawer` wrapper on this tree.) */
-.grabber-shell .sidebar-inner{border:0;border-radius:0;box-shadow:none}
+/* The sessions sidebar is the first column INSIDE the surface. Drop its card
+   rounding and shadow and its top/bottom/left borders so it sits flush against
+   the surface's rounded corner, but KEEP its right border — that divider between
+   the session list and the content is deliberate (matches the source branch,
+   which zeroes only top/bottom/left + radius). */
+.grabber-shell .sidebar-inner{border-top:0;border-bottom:0;border-left:0;border-radius:0;box-shadow:none}
 @media(prefers-reduced-motion:reduce){
   .grabber-shell{transition:none!important}
 }
@@ -2300,16 +2300,17 @@ file-tree-container{
 .mobile-navigation-rail .nav-item.nav-active{background:transparent;color:var(--text);filter:none}
 /* On the flat chrome top bar the Liquid Glass pills (the readout capsule with
    its tokens + system metrics, and the Request a Feature pill) read as raised
-   cards against the --chrome surface, so neutralise their glass pane there:
-   no shadow, no tint fill, no refraction highlight — they sit flush on the
-   chrome. The search trigger keeps its glass (not requested). */
-.grabber-shell .tb-capsule, .mobile-chrome .tb-capsule,
-.grabber-shell [data-testid="feedback-pill"], .mobile-chrome [data-testid="feedback-pill"]{
-  background:transparent;box-shadow:none;border-color:transparent;
+   cards against the --chrome surface, so neutralise their glass pane there. The
+   glass root is `.liquid-glass` (components/ui/liquid-glass): drop its fill,
+   shadow and border, and hide its effect layers, so the pills sit flush on the
+   chrome. Scoped to the capsule + feedback pill; the search trigger keeps glass. */
+.grabber-shell .tb-capsule.liquid-glass, .mobile-chrome .tb-capsule.liquid-glass,
+.grabber-shell [data-testid="feedback-pill"].liquid-glass, .mobile-chrome [data-testid="feedback-pill"].liquid-glass{
+  background:transparent !important;box-shadow:none !important;border:0 !important;
 }
-.grabber-shell .tb-capsule::before, .mobile-chrome .tb-capsule::before,
-.grabber-shell [data-testid="feedback-pill"]::before, .mobile-chrome [data-testid="feedback-pill"]::before{
-  display:none;
+.grabber-shell .tb-capsule.liquid-glass > [data-liquid-glass-layer], .mobile-chrome .tb-capsule.liquid-glass > [data-liquid-glass-layer],
+.grabber-shell [data-testid="feedback-pill"].liquid-glass > [data-liquid-glass-layer], .mobile-chrome [data-testid="feedback-pill"].liquid-glass > [data-liquid-glass-layer]{
+  display:none !important;
 }
 
 /* ── Frameless Electron window (macOS) ──
