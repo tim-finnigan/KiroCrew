@@ -829,9 +829,8 @@ async def _update_unserialized(
             # budget-revivable against an explicit pause. Both transitions
             # serialize on _lock, so re-checking here closes the race: the
             # bound's deactivation degrades to a no-op when the loop is
-            # already inactive. The reverse order is already safe — a
-            # manual pause overwriting a bound tag only ever NARROWS
-            # revivability ("manual" never auto-revives).
+            # already inactive. The reverse order -- a reasonless pause
+            # arriving after the bound -- is closed two branches down.
             elif (
                 not active
                 and stopped_reason is None
@@ -846,6 +845,22 @@ async def _update_unserialized(
                     "AutoNudge: loop %s retains its source stop reason on "
                     "reasonless inactive update",
                     loop.id,
+                )
+            elif (
+                not active
+                and stopped_reason is None
+                and not loop.active
+                and loop.stopped_reason in _TERMINAL_BOUND_REASONS
+            ):
+                # The MIRROR of the race above: the bound landed first and a
+                # reasonless pause (the goal popover's, pressed off a stale
+                # running reading) arrives second. A repeat of an inactive state
+                # is not a new stop, and "manual" over the bound would lose why
+                # the loop ended.
+                logger.info(
+                    "AutoNudge: loop %s keeps its %s stop on reasonless inactive update",
+                    loop.id,
+                    loop.stopped_reason,
                 )
             elif stopped_reason in _TERMINAL_BOUND_REASONS and not active and not loop.active:
                 logger.info(
@@ -878,6 +893,14 @@ async def _update_unserialized(
                         # Same rule, same reason: the streak is evidence
                         # about a PAST run, and a revival starts a fresh one.
                         loop.consecutive_start_failures = 0
+                        # A resume runs a FRESH budget (Hermes ``/goal resume``
+                        # resets the turn counter): without this the timer's
+                        # cap and budget checks re-stop a bound-stopped loop on
+                        # its first tick unless the user raised the bound first.
+                        # ``created_ts`` IS the budget clock -- every reader of
+                        # the runtime left measures from it -- so it moves too.
+                        loop.cycle_count = 0
+                        loop.created_ts = time.time()
                 else:
                     loop.stopped_reason = stopped_reason or MANUAL_STOP_REASON
         revived = loop.active and not was_active
