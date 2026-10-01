@@ -1422,7 +1422,6 @@ export default function App() {
       active={navRowActive(n.path)}
       collapsed={effectiveCollapsed}
       onClick={closeMobileNav}
-      onClickOverride={isChat && (activePath === n.path || activePath.startsWith(n.path + '/')) ? () => window.dispatchEvent(new Event('toggle-pin-chat-sidebar')) : undefined}
       badge={<NavBadge navId={n.id} collapsed={effectiveCollapsed} appBadges={isAppNavId(n.id) ? railAppBadges : appBadges} runState={n.appName ? railAppRunStates[n.appName] : undefined} />}
     />
   )
